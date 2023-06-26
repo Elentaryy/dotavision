@@ -1,11 +1,11 @@
-FROM python:3.10
+FROM python:3.10-slim
 
-WORKDIR /app
+WORKDIR /backend/app
 
-COPY ./requirements.txt /app/requirements.txt
+COPY ./requirements.txt /backend/requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r /backend/requirements.txt
 
-COPY ./app /app/app
+COPY ./app /backend/app
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--reload"]

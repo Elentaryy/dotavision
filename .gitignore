@@ -5,3 +5,5 @@ venv/
 t.txt
 
 notebooks/
+
+app.log

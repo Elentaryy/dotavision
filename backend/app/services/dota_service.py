@@ -29,6 +29,21 @@ class DotaService:
         
         except Exception as e:
             logger.info(f"Error occurred while sending request for pro matches. {str(e)}")
-            return None     
+            return None  
+
+    def get_match_info(self, match_id: int):
+        url = f"https://api.steampowered.com/IDOTA2Match_570/GetMatchDetails/v1/?key={self.api_key}&match_id={match_id}"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                return data
+            else:
+                logger.info(f"Error occurred while fetching match details for match ID {match_id}. {response.status_code}, {response.text}")
+                return None
+        except Exception as e:
+            logger.info(f'Error occurred while sending request for match info. {str(e)}')
+            return None 
         
+    
     
