@@ -19,7 +19,7 @@ password = os.getenv('POSTGRES_PASSWORD')
 
 
 class DatabaseService:
-    def __init__(self, db_name = db_name, user = user, password = password, host='db', port='5432'):
+    def __init__(self, db_name, user, password, host='db', port='5432'):
         self.db_name = db_name
         self.user = user
         self.password = password
@@ -39,7 +39,7 @@ class DatabaseService:
                         port=self.port
                     )
                 self.connection.autocommit = True
-                logger.info(f'Successfully connected to bd')
+                logger.info(f'Successfully connected to db')
                 break
             except OperationalError as e:
                 logger.error(f'Error {str(e)} occured, trying to reconnect in {i**2} seconds')
@@ -55,47 +55,42 @@ class DatabaseService:
     def get_live_matches(self):
         try:
             with self.connection.cursor() as cursor:
-                check_live_query = sql.SQL("SELECT match_id FROM dota_dds.pro_matches WHERE is_live = 1")
+                check_live_query = sql.SQL("SELECT match_id FROM dota_dds.pro_matches WHERE is_live = True")
                 cursor.execute(check_live_query)
-                return [game[0] for game in cursor.fetchall()]
+                games = [game[0] for game in cursor.fetchall()]
+                logger.info(f'returning live matches -- {games}')
+                return games
         except psycopg2.Error as e:
             logger.info(f'Error checking live games: {str(e)}')
             return []
-
-    def check_game_exists(self, match_id):
-        try:
-            with self.connection.cursor() as cursor:
-                check_game_query = sql.SQL("SELECT EXISTS(SELECT 1 FROM dota_dds.pro_matches WHERE match_id = %s)")
-                cursor.execute(check_game_query, (match_id,))
-                return cursor.fetchone()[0]
-        except psycopg2.Error as e:
-            logger.info(f'Error checking game existence: {str(e)}')
-            return False
 
     def check_live_series_exists(self, team1_id, team2_id, series_type):
         try:
             with self.connection.cursor() as cursor:
                 check_series_query = sql.SQL("""
                     SELECT series_id FROM dota_dds.pro_series 
-                    WHERE is_live = 1 AND series_type = %s AND
+                    WHERE is_live = True AND series_type = %s AND
                     ((team1_id = %s AND team2_id = %s) OR (team1_id = %s AND team2_id = %s))
                 """)
                 cursor.execute(check_series_query, (series_type, team1_id, team2_id, team2_id, team1_id))
                 series = cursor.fetchone()
+                logger.info(series)
                 return series[0] if series else None
         except psycopg2.Error as e:
             logger.info(f'Error checking series existence: {str(e)}')
             return None
 
-    def create_series(self, team1_id, team2_id, series_type):
+    def create_series(self, team1_id, team2_id, series_type, team1_score, team2_score):
         try:
             with self.connection.cursor() as cursor:
                 insert_series_query = sql.SQL("""
                     INSERT INTO dota_dds.pro_series (team1_id, team2_id, series_type, team1_score, team2_score, is_live)
-                    VALUES (%s, %s, %s, 0, 0, 1) RETURNING series_id
+                    VALUES (%s, %s, %s, %s, %s, True) RETURNING series_id
                 """)
-                cursor.execute(insert_series_query, (series_type, team1_id, team2_id))
-                return cursor.fetchone()[0]
+                cursor.execute(insert_series_query, (team1_id, team2_id, series_type, team1_score, team2_score))
+                series_id = cursor.fetchone()[0]
+                logger.info(f'Successfully created series {series_id}')
+                return series_id
         except psycopg2.Error as e:
             logger.info(f'Error creating series: {str(e)}')
             return None
@@ -105,13 +100,14 @@ class DatabaseService:
             with self.connection.cursor() as cursor:
                 insert_game_query = sql.SQL("""
                     INSERT INTO dota_dds.pro_matches (match_id, series_id, match_data, is_live)
-                    VALUES (%s, %s, %s, 1)
+                    VALUES (%s, %s, %s, True)
                 """)
                 cursor.execute(insert_game_query, (match_id, series_id, match_data))
+                logger.info(f'Successfully inserted match {match_id}')
         except psycopg2.Error as e:
             logger.info(f'Error inserting game: {str(e)}')
 
-    def update_game(self, match_id, data):
+    def update_game(self, match_id, data, is_live):
         try:
             with self.connection.cursor() as cursor:
                 update_game_query = sql.SQL("""
@@ -121,17 +117,18 @@ class DatabaseService:
                     WHERE match_id = %s
                     RETURNING series_id
                 """)
-                cursor.execute(update_game_query, (0, data, match_id))
-                return cursor.fetchone()[0]
+                cursor.execute(update_game_query, (is_live, data, match_id))
+                series_id = cursor.fetchone()[0]
+                logger.info(f'Successfully updated game {match_id}')
+                return series_id
         except psycopg2.Error as e:
             logger.info(f'Error updating game: {str(e)}')
 
     def check_and_update_series_status(self, series_id, winner):
         try:
             with self.connection.cursor() as cursor:
-                # Fetch the current scores
                 select_series_query = sql.SQL("""
-                    SELECT team1_id, team2_id, team1_score, team2_score, series_type FROM dota_dds.pro_series WHERE id = %s
+                    SELECT team1_id, team2_id, team1_score, team2_score, series_type FROM dota_dds.pro_series WHERE series_id = %s
                 """)
                 cursor.execute(select_series_query, (series_id,))
                 team1_id, team2_id, team1_score, team2_score, series_type = cursor.fetchone()
@@ -143,18 +140,23 @@ class DatabaseService:
                 is_live = 1
                 if series_type == 1:
                     if team1_score >= 2 or team2_score >= 2:
-                        is_live = 0
+                        is_live = False
                     else:
-                        is_live = 1
+                        is_live = True
+                elif series_type == 0:
+                    if team1_score >= 1 or team2_score >= 1:
+                        is_live = False
+                    else:
+                        is_live = True
 
-                # Update the 'is_live' field
                 update_series_query = sql.SQL("""
                     UPDATE dota_dds.pro_series 
                     SET is_live = %s,
                     team1_score = %s, 
-                    team2_score = %s, 
-                    WHERE id = %s
+                    team2_score = %s
+                    WHERE series_id = %s
                 """)
                 cursor.execute(update_series_query, (is_live, team1_score, team2_score, series_id))
+                logger.info(f'Successfully update series {series_id}')
         except psycopg2.Error as e:
             logger.info(f'Error updating series status: {str(e)}')

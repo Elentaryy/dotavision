@@ -8,4 +8,10 @@ RUN pip install --no-cache-dir -r /backend/requirements.txt
 
 COPY ./app /backend/app
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--reload"]
+RUN chmod +x start.sh
+RUN chmod +x db_live.sh
+
+CMD ["sh", "start.sh"]
+
+#CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--reload"]
+
