@@ -22,7 +22,7 @@ ds = DotaService(api_key=api_key)
 def check_live_matches():
 
     data =  ds.get_live_matches()
-    db_data = db.get_live_matches()
+    db_data = [game['match_id'] for game in db.get_live_matches()['games']]
 
     games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team')]
     game_ids = [game['match_id'] for game in games]
@@ -30,7 +30,7 @@ def check_live_matches():
     for game in games:
         if game['match_id'] not in db_data:
             logger.info(game['match_id'])
-            logger.info(db_data)
+            logger.info(f'Current live db games - {db_data}')
             series_id = db.check_live_series_exists(game['radiant_team']['team_id'], game['dire_team']['team_id'], game['series_type'])
             if series_id is None:
                 series_id = db.create_series(game['radiant_team']['team_id'], 

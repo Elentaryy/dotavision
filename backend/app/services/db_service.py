@@ -1,6 +1,4 @@
-import pandas as pd
 import logging
-import json 
 import os
 import psycopg2
 from psycopg2 import sql
@@ -55,14 +53,13 @@ class DatabaseService:
     def get_live_matches(self):
         try:
             with self.connection.cursor() as cursor:
-                check_live_query = sql.SQL("SELECT match_id FROM dota_dds.pro_matches WHERE is_live = True")
+                check_live_query = sql.SQL("SELECT match_id, match_data FROM dota_dds.pro_matches WHERE is_live = True")
                 cursor.execute(check_live_query)
-                games = [game[0] for game in cursor.fetchall()]
-                logger.info(f'returning live matches -- {games}')
-                return games
+                games = [{'match_id': row[0], 'match_data': row[1]} for row in cursor.fetchall()]
+                return {'games': games}
         except psycopg2.Error as e:
             logger.info(f'Error checking live games: {str(e)}')
-            return []
+            return {}
 
     def check_live_series_exists(self, team1_id, team2_id, series_type):
         try:

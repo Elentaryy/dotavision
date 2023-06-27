@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 import logging 
 from time import sleep
-from services.db_update import check_live_matches
+from api.routers import live_router
 
 logging.basicConfig(
     filename='app.log',
@@ -11,6 +11,7 @@ logging.basicConfig(
 
 app = FastAPI()
 
+app.include_router(live_router.router)
 
 @app.get("/")
 def read_root():

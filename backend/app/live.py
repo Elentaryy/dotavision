@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
     try:
-        print('checking matches')
         check_live_matches()
     except Exception as e:
         logger.info(e)
