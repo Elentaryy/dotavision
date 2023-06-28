@@ -1,4 +1,4 @@
-from api.handlers.live_handler import get_live_games_info, get_live_series_info
+from api.handlers.live_handler import get_live_games_info, get_live_series_info, predict_live_games
 from api.models.live_model import Matches, LiveSeries
 from api.models.error import Error
 from fastapi import APIRouter
@@ -16,3 +16,7 @@ def read_live_games():
 @router.get("/series", response_model=Union[LiveSeries, Error])
 def read_live_series():
     return get_live_series_info()
+
+@router.get("/predict")
+def predict():
+    return predict_live_games()

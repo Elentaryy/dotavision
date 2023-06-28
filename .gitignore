@@ -3,7 +3,8 @@ __pycache__
 venv/
 
 t.txt
-
-notebooks/
+.ipynb_checkpoints
 
 app.log
+
+data/
