@@ -60,12 +60,135 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error checking live games: {str(e)}')
             return {}
+        
+    def create_game(self, match_id, series_id, match_data):
+        try:
+            with self.connection.cursor() as cursor:
+                insert_game_query = sql.SQL("""
+                    INSERT INTO dota_dds.pro_matches (match_id, series_id, match_data, is_live)
+                    VALUES (%s, %s, %s, True)
+                """)
+                cursor.execute(insert_game_query, (match_id, series_id, match_data))
+                logger.info(f'Successfully created match {match_id}')
+        except psycopg2.Error as e:
+            logger.info(f'Error created game: {str(e)}')
+
+    def update_game(self, match_id, data, is_live):
+        try:
+            with self.connection.cursor() as cursor:
+                update_game_query = sql.SQL("""
+                    UPDATE dota_dds.pro_matches
+                    SET is_live = %s,
+                        match_data = %s
+                    WHERE match_id = %s
+                    RETURNING series_id
+                """)
+                cursor.execute(update_game_query, (is_live, data, match_id))
+                series_id = cursor.fetchone()[0]
+                logger.info(f'Successfully updated game {match_id}')
+                return series_id
+        except psycopg2.Error as e:
+            logger.info(f'Error updating game: {str(e)}')
+
+    def add_game_status(self, match_id, match_data, ingame_dttm):
+        try:
+            with self.connection.cursor() as cursor:
+                insert_game_query = sql.SQL("""
+                    INSERT INTO dota_dds.pro_matches_statuses (match_id, match_data, ingame_dttm)
+                    SELECT %s, %s, %s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM dota_dds.pro_matches_statuses
+                        WHERE match_id = %s AND ingame_dttm = %s
+                    )
+                """)
+                cursor.execute(insert_game_query, (match_id, match_data, ingame_dttm, match_id, ingame_dttm))
+                logger.info(f'Successfully added game status {match_id}')
+        except psycopg2.Error as e:
+            logger.info(f'Error created game: {str(e)}')
+
+    def get_game_statuses(self, match_id):
+        try:
+            with self.connection.cursor() as cursor:
+                get_game_query = sql.SQL("""
+                    SELECT match_id, match_data, ingame_dttm 
+                    FROM dota_dds.pro_matches_statuses 
+                    WHERE match_id = %s
+                    ORDER BY ingame_dttm ASC
+                """)
+                cursor.execute(get_game_query, (match_id,))
+                statuses = [{'match_data': row[1], 'ingame_dttm': row[2]} for row in cursor.fetchall()]
+                return {'match_id': match_id, 'statuses': statuses}
+        except psycopg2.Error as e:
+            logger.info(f'Error fetching game statuses: {str(e)}')
+            return {}
+    
+    def get_series(self, dt):
+        try:
+            with self.connection.cursor() as cursor:
+                query = sql.SQL("""
+                    SELECT 
+                        ps.series_id, pm.match_id, pm.match_data
+                    FROM dota_dds.pro_series AS ps
+                    INNER JOIN dota_dds.pro_matches AS pm
+                        ON ps.series_id = pm.series_id
+                    WHERE ps.is_live = False AND ps.created_at = %s
+                """)
+                cursor.execute(query, (dt,))
+                series_dict = {}
+
+                for row in cursor.fetchall():
+                    series_id = row[0]
+                    match = {'match_id': row[1], 'match_data': row[2]}
+
+                    if series_id in series_dict:
+                        series_dict[series_id]['matches'].append(match)
+                    else:
+                        series_dict[series_id] = {'series_id': series_id, 'matches': [match]}
+
+                series_list = list(series_dict.values())
+
+                return {'series': series_list}
+        except psycopg2.Error as e:
+            logger.info(f'Error fetching ended series matches: {str(e)}')
+            return {}
+        
+    def get_live_series(self):
+        try:
+            with self.connection.cursor() as cursor:
+                query = sql.SQL("""
+                    SELECT 
+                        ps.series_id, pm.match_id, pm.match_data
+                    FROM dota_dds.pro_series AS ps
+                    INNER JOIN dota_dds.pro_matches AS pm
+                        ON ps.series_id = pm.series_id
+                    WHERE ps.is_live = True
+                """)
+                cursor.execute(query)
+                series_dict = {}
+
+                for row in cursor.fetchall():
+                    series_id = row[0]
+                    match = {'match_id': row[1], 'match_data': row[2]}
+
+                    if series_id in series_dict:
+                        series_dict[series_id]['matches'].append(match)
+                    else:
+                        series_dict[series_id] = {'series_id': series_id, 'matches': [match]}
+
+                series_list = list(series_dict.values())
+
+                return {'series': series_list}
+        except psycopg2.Error as e:
+            logger.info(f'Error fetching live series matches: {str(e)}')
+            return {}
 
     def check_live_series_exists(self, team1_id, team2_id, series_type):
         try:
             with self.connection.cursor() as cursor:
                 check_series_query = sql.SQL("""
-                    SELECT series_id FROM dota_dds.pro_series 
+                    SELECT 
+                        series_id 
+                    FROM dota_dds.pro_series 
                     WHERE is_live = True AND series_type = %s AND
                     ((team1_id = %s AND team2_id = %s) OR (team1_id = %s AND team2_id = %s))
                 """)
@@ -92,40 +215,13 @@ class DatabaseService:
             logger.info(f'Error creating series: {str(e)}')
             return None
 
-    def insert_game(self, match_id, series_id, match_data):
-        try:
-            with self.connection.cursor() as cursor:
-                insert_game_query = sql.SQL("""
-                    INSERT INTO dota_dds.pro_matches (match_id, series_id, match_data, is_live)
-                    VALUES (%s, %s, %s, True)
-                """)
-                cursor.execute(insert_game_query, (match_id, series_id, match_data))
-                logger.info(f'Successfully inserted match {match_id}')
-        except psycopg2.Error as e:
-            logger.info(f'Error inserting game: {str(e)}')
-
-    def update_game(self, match_id, data, is_live):
-        try:
-            with self.connection.cursor() as cursor:
-                update_game_query = sql.SQL("""
-                    UPDATE dota_dds.pro_matches
-                    SET is_live = %s,
-                    match_data = %s
-                    WHERE match_id = %s
-                    RETURNING series_id
-                """)
-                cursor.execute(update_game_query, (is_live, data, match_id))
-                series_id = cursor.fetchone()[0]
-                logger.info(f'Successfully updated game {match_id}')
-                return series_id
-        except psycopg2.Error as e:
-            logger.info(f'Error updating game: {str(e)}')
-
     def check_and_update_series_status(self, series_id, winner):
         try:
             with self.connection.cursor() as cursor:
                 select_series_query = sql.SQL("""
-                    SELECT team1_id, team2_id, team1_score, team2_score, series_type FROM dota_dds.pro_series WHERE series_id = %s
+                    SELECT 
+                        team1_id, team2_id, team1_score, team2_score, series_type 
+                    FROM dota_dds.pro_series WHERE series_id = %s
                 """)
                 cursor.execute(select_series_query, (series_id,))
                 team1_id, team2_id, team1_score, team2_score, series_type = cursor.fetchone()
@@ -149,8 +245,8 @@ class DatabaseService:
                 update_series_query = sql.SQL("""
                     UPDATE dota_dds.pro_series 
                     SET is_live = %s,
-                    team1_score = %s, 
-                    team2_score = %s
+                        team1_score = %s, 
+                        team2_score = %s
                     WHERE series_id = %s
                 """)
                 cursor.execute(update_series_query, (is_live, team1_score, team2_score, series_id))

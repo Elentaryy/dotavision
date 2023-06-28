@@ -46,3 +46,10 @@ class Match(BaseModel):
 
 class Matches(BaseModel):
     games: List[Match]
+
+class Series(BaseModel):
+    series_id: int
+    matches: List[Match]
+
+class LiveSeries(BaseModel):
+    series: List[Series]

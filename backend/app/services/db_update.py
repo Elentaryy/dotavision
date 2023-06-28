@@ -38,10 +38,15 @@ def check_live_matches():
                                              game['series_type'], 
                                              game['radiant_series_wins'],
                                              game['dire_series_wins'])
-            db.insert_game(match_id = game['match_id'], series_id = series_id, match_data = game)
+            db.create_game(match_id = game['match_id'], series_id = series_id, match_data = game)
 
         if game['match_id'] in db_data:
             series_id = db.update_game(match_id = game['match_id'], data = game, is_live = True)
+            logger.info(game['scoreboard'].get('duration'))
+            logger.info('pzdc')
+            if game['scoreboard'].get('duration'):
+                game_data = {i:game[i] for i in game if i!='players'}
+                db.add_game_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game['scoreboard'].get('duration')))
     
 
     for game_id in db_data:
