@@ -14,5 +14,12 @@ services:
       - DATABASE_URL=${DATABASE_URL}
     volumes:
       - ./backend:/backend
+  bot:
+    build: ./bot
+    volumes:
+      - ./bot:/bot
+    depends_on:
+      - backend
+    restart: always
 volumes:
   postgres_data:

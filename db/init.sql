@@ -10,7 +10,7 @@ CREATE TABLE dota_dds.pro_series (
     team1_score int,
     team2_score int,
     is_live boolean,
-    created_at date DEFAULT CURRENT_DATE
+    raw_dt date DEFAULT CURRENT_DATE
 );
 
 CREATE TABLE dota_dds.pro_matches (
@@ -18,7 +18,7 @@ CREATE TABLE dota_dds.pro_matches (
     series_id int NOT NULL,
     match_data json,
     is_live boolean,
-    created_at date DEFAULT CURRENT_DATE
+    raw_dt date DEFAULT CURRENT_DATE
 );
 
 CREATE TABLE dota_dds.pro_matches_statuses (
