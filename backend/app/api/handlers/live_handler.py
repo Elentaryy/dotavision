@@ -12,7 +12,11 @@ logger = logging.getLogger('live_handler')
 
 load_dotenv()
 
-db = DatabaseService()
+db_name = os.getenv('POSTGRES_DB')
+user = os.getenv('POSTGRES_USER')
+password = os.getenv('POSTGRES_PASSWORD')
+
+db = DatabaseService(db_name = db_name, user = user, password = password)
 
 with open('model/models/heroes_xgb.pkl', 'rb') as f:
     xgb = pickle.load(f)
