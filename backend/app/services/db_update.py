@@ -16,7 +16,7 @@ api_key = os.getenv('STEAM_API_KEY')
 
 
 
-db = DatabaseService()
+db = DatabaseService(db_name = db_name, user = user, password = password)
 ds = DotaService(api_key=api_key)
 
 
