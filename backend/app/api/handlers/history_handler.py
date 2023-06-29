@@ -9,11 +9,7 @@ logger = logging.getLogger('history_handler')
 
 load_dotenv()
 
-db_name = os.getenv('POSTGRES_DB')
-user = os.getenv('POSTGRES_USER')
-password = os.getenv('POSTGRES_PASSWORD')
-
-db = DatabaseService(db_name = db_name, user = user, password = password)
+db = DatabaseService()
 
 
 def get_series_info(dt: date):

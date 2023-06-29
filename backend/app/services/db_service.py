@@ -17,7 +17,7 @@ password = os.getenv('POSTGRES_PASSWORD')
 
 
 class DatabaseService:
-    def __init__(self, db_name, user, password, host='db', port='5432'):
+    def __init__(self, db_name = db_name, user = user, password = password, host='db', port='5432'):
         self.db_name = db_name
         self.user = user
         self.password = password
@@ -151,6 +151,8 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error fetching ended series matches: {str(e)}')
             return {}
+        
+
         
     def get_live_series(self):
         try:

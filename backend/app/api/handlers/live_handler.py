@@ -12,11 +12,7 @@ logger = logging.getLogger('live_handler')
 
 load_dotenv()
 
-db_name = os.getenv('POSTGRES_DB')
-user = os.getenv('POSTGRES_USER')
-password = os.getenv('POSTGRES_PASSWORD')
-
-db = DatabaseService(db_name = db_name, user = user, password = password)
+db = DatabaseService()
 
 with open('model/models/heroes_xgb.pkl', 'rb') as f:
     xgb = pickle.load(f)
@@ -50,7 +46,6 @@ def predict_live_games():
             pred = data.drop(columns = ['radiant_team', 'dire_team', 'match_data']).values
             logger.info(data.drop(columns = ['radiant_team', 'dire_team', 'match_data']).columns)
 
-            logger.info(data)
             teams['prediction'] = xgb.predict(pred)
             return teams.to_dict(orient="records")
         else:
