@@ -15,7 +15,6 @@ db_name = os.getenv('POSTGRES_DB')
 user = os.getenv('POSTGRES_USER')
 password = os.getenv('POSTGRES_PASSWORD')
 
-
 class DatabaseService:
     def __init__(self, db_name = db_name, user = user, password = password, host='db', port='5432'):
         self.db_name = db_name
@@ -261,3 +260,5 @@ class DatabaseService:
                 logger.info(f'Successfully update series {series_id}')
         except psycopg2.Error as e:
             logger.info(f'Error updating series status: {str(e)}')
+
+db = DatabaseService(db_name = db_name, user = user, password = password)
