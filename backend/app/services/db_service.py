@@ -53,7 +53,13 @@ class DatabaseService:
     def get_live_matches(self):
         try:
             with self.connection.cursor() as cursor:
-                check_live_query = sql.SQL("SELECT match_id, match_data FROM dota_dds.pro_matches WHERE is_live = True")
+                check_live_query = sql.SQL("""
+                    SELECT 
+                        match_id, 
+                        match_data 
+                    FROM dota_dds.pro_matches 
+                    WHERE is_live = True
+                """)
                 cursor.execute(check_live_query)
                 games = [{'match_id': row[0], 'match_data': row[1]} for row in cursor.fetchall()]
                 return {'games': games}

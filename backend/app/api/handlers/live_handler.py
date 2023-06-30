@@ -18,7 +18,7 @@ password = os.getenv('POSTGRES_PASSWORD')
 
 db = DatabaseService(db_name = db_name, user = user, password = password)
 
-with open('model/models/heroes_xgb.pkl', 'rb') as f:
+with open('model/models/heroes_xgb_pub.pkl', 'rb') as f:
     xgb = pickle.load(f)
 
 with open('model/models/heroes_lr.pkl', 'rb') as f:
@@ -43,14 +43,15 @@ def get_live_series_info():
     
 def predict_live_games():
     try:
-        data = format_data(db.get_live_matches())
+        data = db.get_live_matches()
+        data = format_data(data)
 
         if data is not None:
             teams = data[['radiant_team', 'dire_team']]
-            pred = data.drop(columns = ['radiant_team', 'dire_team', 'match_data']).values
-            logger.info(data.drop(columns = ['radiant_team', 'dire_team', 'match_data']).columns)
+            pred = data.drop(columns = ['radiant_team', 'dire_team']).values
 
             teams['prediction'] = xgb.predict(pred)
+            teams['proba'] = xgb.predict_proba(pred).max(axis=1)
             return teams.to_dict(orient="records")
         else:
             raise ValueError('wrong data format')
