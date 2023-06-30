@@ -1,8 +1,6 @@
 from fastapi import HTTPException
 from services.db_service import db
-from dotenv import load_dotenv
 import logging
-import os
 import pandas as pd
 from utils import format_data
 

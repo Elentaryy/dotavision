@@ -1,11 +1,15 @@
 import os
 import requests
+from dotenv import load_dotenv
 import pandas as pd
 import logging
-import json 
+import json
 
+load_dotenv()
 
 logger = logging.getLogger('dota_api')
+
+api_key = os.getenv('STEAM_API_KEY')
 
 class DotaService:
     def __init__(self, api_key: str):
@@ -46,6 +50,8 @@ class DotaService:
         except Exception as e:
             logger.info(f'Error occurred while sending request for match info. {str(e)}')
             return None 
+        
+ds = DotaService(api_key=api_key)
         
     
     

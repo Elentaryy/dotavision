@@ -1,27 +1,11 @@
 import os
-from services.db_service import DatabaseService
-from services.dota_service import DotaService
-from dotenv import load_dotenv
+from services.db_service import db
+from services.dota_service import ds
 import logging
 
 logger = logging.getLogger('db_update')
 
-load_dotenv()
-
-db_name = os.getenv('POSTGRES_DB')
-user = os.getenv('POSTGRES_USER')
-password = os.getenv('POSTGRES_PASSWORD')
-
-api_key = os.getenv('STEAM_API_KEY')
-
-
-
-db = DatabaseService(db_name = db_name, user = user, password = password)
-ds = DotaService(api_key=api_key)
-
-
-
-def check_live_matches(db_name = db_name, user = user, password = password):
+def check_live_matches():
 
     data =  ds.get_live_matches()
     db_data = [game['match_id'] for game in db.get_live_matches()['games']]

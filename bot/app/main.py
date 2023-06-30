@@ -3,7 +3,6 @@ import os
 import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
-# from handlers.predict_live import predict_handler
 from handlers.predict_live import live_matches_handler, match_callback_handler
 
 load_dotenv()

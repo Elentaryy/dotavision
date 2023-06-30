@@ -1,5 +1,6 @@
 import logging
 import os
+from dotenv import load_dotenv
 import psycopg2
 from psycopg2 import sql
 from psycopg2.extras import execute_values, Json
@@ -8,6 +9,7 @@ from psycopg2.extensions import register_adapter, AsIs
 from time import sleep
 
 register_adapter(dict, Json)
+load_dotenv()
 
 logger = logging.getLogger('db_service')
 
@@ -16,7 +18,7 @@ user = os.getenv('POSTGRES_USER')
 password = os.getenv('POSTGRES_PASSWORD')
 
 class DatabaseService:
-    def __init__(self, db_name = db_name, user = user, password = password, host='db', port='5432'):
+    def __init__(self, db_name, user, password, host='db', port='5432'):
         self.db_name = db_name
         self.user = user
         self.password = password
@@ -262,3 +264,4 @@ class DatabaseService:
             logger.info(f'Error updating series status: {str(e)}')
 
 db = DatabaseService(db_name = db_name, user = user, password = password)
+
