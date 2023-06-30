@@ -1,22 +1,12 @@
 from fastapi import HTTPException
-from services.db_service import DatabaseService
-from dotenv import load_dotenv
+from services.db_service import db
 import logging
-import os
 import pandas as pd
 from utils import format_data
 
 import pickle
 
 logger = logging.getLogger('live_handler')
-
-load_dotenv()
-
-db_name = os.getenv('POSTGRES_DB')
-user = os.getenv('POSTGRES_USER')
-password = os.getenv('POSTGRES_PASSWORD')
-
-db = DatabaseService(db_name = db_name, user = user, password = password)
 
 with open('model/models/heroes_xgb_pub.pkl', 'rb') as f:
     xgb = pickle.load(f)
