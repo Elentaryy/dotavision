@@ -28,4 +28,11 @@ CREATE TABLE dota_dds.pro_matches_statuses (
     ingame_dttm int NOT NULL 
 )
 
+CREATE TABLE dota_dds.pro_matches_statusesas (
+    status_id SERIAL PRIMARY KEY,
+    match_id bigint NOT NULL,
+    match_data json,
+    ingame_dttm int NOT NULL 
+)
+
 
