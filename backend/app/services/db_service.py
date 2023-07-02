@@ -17,7 +17,6 @@ db_name = os.getenv('POSTGRES_DB')
 user = os.getenv('POSTGRES_USER')
 password = os.getenv('POSTGRES_PASSWORD')
 
-
 class DatabaseService:
     def __init__(self, db_name, user, password, host='db', port='5432'):
         self.db_name = db_name
