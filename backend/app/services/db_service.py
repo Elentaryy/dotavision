@@ -239,7 +239,7 @@ class DatabaseService:
                 team2_points = 1 if winner == team2_id else 0
                 team1_score, team2_score = team1_score + team1_points, team2_score + team2_points
 
-                is_live = 1
+                is_live = True
                 if series_type == 1:
                     if team1_score >= 2 or team2_score >= 2:
                         is_live = False
