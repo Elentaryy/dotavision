@@ -1,6 +1,6 @@
 #!/bin/sh
 while true;
-do
+do 
     python check_live.py
     sleep 20
 done

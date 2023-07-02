@@ -28,3 +28,4 @@ CREATE TABLE dota_dds.pro_matches_statuses (
     ingame_dttm int NOT NULL 
 )
 
+
