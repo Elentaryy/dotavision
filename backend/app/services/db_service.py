@@ -51,6 +51,13 @@ class DatabaseService:
             self.connection.close()
             logger.info(f'Connection to the database has been closed')
 
+
+
+
+
+    
+
+
     def get_live_matches(self):
         try:
             with self.connection.cursor() as cursor:
