@@ -10,7 +10,7 @@ def check_live_matches():
     data =  ds.get_live_matches()
     db_data = [game['match_id'] for game in db.get_live_matches()['games']]
 
-    games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team')]
+    games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team') and game.get('league_id') == 15438]
     game_ids = [game['match_id'] for game in games]
 
     for game in games:
@@ -30,7 +30,7 @@ def check_live_matches():
             series_id = db.update_game(match_id = game['match_id'], data = game, is_live = True)
             if game['scoreboard'].get('duration'):
                 game_data = {i:game[i] for i in game if i!='players'}
-                db.add_game_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game['scoreboard'].get('duration')))
+                #db.add_game_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game['scoreboard'].get('duration')))
     
 
     for game_id in db_data:
@@ -41,7 +41,7 @@ def check_live_matches():
                 series_id = db.update_game(match_id = game_id, data = match_info['result'], is_live = False)
                 winner = match_info['result']['radiant_team_id'] if match_info['result']['radiant_win'] else match_info['result']['dire_team_id']
 
-                db.check_and_update_series_status(series_id = series_id, winner = winner)
+                #db.check_and_update_series_status(series_id = series_id, winner = winner)
 
 
             
