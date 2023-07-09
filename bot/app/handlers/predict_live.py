@@ -15,6 +15,11 @@ def get_predictions():
 
 async def live_matches(update: Update, context: CallbackContext) -> None:
     predictions = get_predictions()
+    
+
+    if not predictions:
+        await update.message.reply_text('There are no live matches at the moment.')
+        return
 
     keyboard = [
         [InlineKeyboardButton(format_match(prediction), callback_data=str(i))] for i, prediction in enumerate(predictions)
@@ -29,7 +34,7 @@ async def live_matches(update: Update, context: CallbackContext) -> None:
 async def match_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     match_index = int(query.data)
-
+    
     prediction = context.user_data['predictions'][match_index]
 
     winner = prediction["dire_team"] if prediction["prediction"] == 0 else prediction["radiant_team"]
