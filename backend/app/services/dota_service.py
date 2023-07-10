@@ -51,6 +51,25 @@ class DotaService:
             logger.info(f'Error occurred while sending request for match info. {str(e)}')
             return None 
         
+    def get_public_matches(self, max_match_id):
+        params = {
+            'less_than_match_id' : max_match_id,
+            'min_rank': 80,
+            'mmr_descending': 1
+        }
+        try:
+            response = requests.get(f'https://api.opendota.com/api/publicMatches', params=params)
+            
+            if response.status_code == 200:
+                logger.info(f'Successfully fetched public matches')
+                return response.json()
+            else:
+                return None
+        except Exception as e:
+            logger.info(f'Error occurred while fetching new public matches. {str(e)}')
+            return None 
+
+        
 ds = DotaService(api_key=api_key)
         
     

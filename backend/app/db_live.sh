@@ -1,12 +1,7 @@
-#!/bin/sh
-<<<<<<< HEAD
+#!/bin/bash
+
 while true;
-do 
-=======
-while true; 
 do
->>>>>>> master
     python check_live.py
     sleep 20
 done
-

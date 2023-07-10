@@ -51,13 +51,6 @@ class DatabaseService:
             self.connection.close()
             logger.info(f'Connection to the database has been closed')
 
-
-
-
-
-    
-
-
     def get_live_matches(self):
         try:
             with self.connection.cursor() as cursor:
@@ -75,7 +68,7 @@ class DatabaseService:
             logger.info(f'Error checking live games: {str(e)}')
             return {}
         
-    def create_game(self, match_id, series_id, match_data):
+    def create_match(self, match_id, series_id, match_data):
         try:
             with self.connection.cursor() as cursor:
                 insert_game_query = sql.SQL("""
@@ -87,7 +80,7 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error created game: {str(e)}')
 
-    def update_game(self, match_id, data, is_live):
+    def update_match(self, match_id, data, is_live):
         try:
             with self.connection.cursor() as cursor:
                 update_game_query = sql.SQL("""
@@ -95,16 +88,12 @@ class DatabaseService:
                     SET is_live = %s,
                         match_data = %s
                     WHERE match_id = %s
-                    RETURNING series_id
                 """)
                 cursor.execute(update_game_query, (is_live, data, match_id))
-                series_id = cursor.fetchone()[0]
-                logger.info(f'Successfully updated game {match_id}')
-                return series_id
         except psycopg2.Error as e:
             logger.info(f'Error updating game: {str(e)}')
 
-    def add_game_status(self, match_id, match_data, ingame_dttm):
+    def add_match_status(self, match_id, match_data, ingame_dttm):
         try:
             with self.connection.cursor() as cursor:
                 insert_game_query = sql.SQL("""
@@ -116,11 +105,10 @@ class DatabaseService:
                     )
                 """)
                 cursor.execute(insert_game_query, (match_id, match_data, ingame_dttm, match_id, ingame_dttm))
-                logger.info(f'Successfully added game status {match_id}')
         except psycopg2.Error as e:
             logger.info(f'Error created game: {str(e)}')
 
-    def get_game_statuses(self, match_id):
+    def get_match_statuses(self, match_id):
         try:
             with self.connection.cursor() as cursor:
                 get_game_query = sql.SQL("""
@@ -135,140 +123,97 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error fetching game statuses: {str(e)}')
             return {}
-    
-    def get_series(self, dt):
+        
+    def get_live_predictions(self):
         try:
             with self.connection.cursor() as cursor:
-                query = sql.SQL("""
+                check_predictions_query = sql.SQL("""
                     SELECT 
-                        ps.series_id, pm.match_id, pm.match_data
-                    FROM dota_dds.pro_series AS ps
-                    INNER JOIN dota_dds.pro_matches AS pm
-                        ON ps.series_id = pm.series_id
-                    WHERE ps.is_live = False AND ps.created_at = %s
+                        p.match_id, 
+                        model,
+                        prediction,
+                        probability
+                    FROM dota_ods.predictions p
+                    INNER JOIN dota_dds.pro_matches pm
+                        ON p.match_id = pm.match_id
+                        AND pm.is_live = True
                 """)
-                cursor.execute(query, (dt,))
-                series_dict = {}
-
-                for row in cursor.fetchall():
-                    series_id = row[0]
-                    match = {'match_id': row[1], 'match_data': row[2]}
-
-                    if series_id in series_dict:
-                        series_dict[series_id]['matches'].append(match)
-                    else:
-                        series_dict[series_id] = {'series_id': series_id, 'matches': [match]}
-
-                series_list = list(series_dict.values())
-
-                return {'series': series_list}
+                cursor.execute(check_predictions_query)
+                predictions = [{'match_id': row[0], 'model': row[1], 'prediction' : row[2], 'probability' : row[3]} for row in cursor.fetchall()]
+                return {'predictions': predictions}
         except psycopg2.Error as e:
-            logger.info(f'Error fetching ended series matches: {str(e)}')
+            logger.info(f'Error returning predictions: {str(e)}')
             return {}
         
-
-        
-    def get_live_series(self):
+    def create_predictions2(self, match_id, radiant_team, dire_team, model, prediction, probability):
         try:
             with self.connection.cursor() as cursor:
-                query = sql.SQL("""
-                    SELECT 
-                        ps.series_id, pm.match_id, pm.match_data
-                    FROM dota_dds.pro_series AS ps
-                    INNER JOIN dota_dds.pro_matches AS pm
-                        ON ps.series_id = pm.series_id
-                    WHERE ps.is_live = True
+                insert_game_query = sql.SQL("""
+                    INSERT INTO dota_ods.predictions (match_id, radiant_team, dire_team, model, prediction, probability)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """)
+                cursor.execute(insert_game_query, (match_id, radiant_team, dire_team, model, prediction, probability))
+                logger.info(f'Successfully created prediction {match_id}')
+        except psycopg2.Error as e:
+            logger.info(f'Error created game: {str(e)}')
+
+    def create_predictions(self, predictions):
+        try:
+            with self.connection.cursor() as cursor:
+                insert_game_query = sql.SQL("""
+                    INSERT INTO dota_ods.predictions (match_id, radiant_team, dire_team, model, prediction, probability)
+                    VALUES (%(match_id)s, %(radiant_team)s, %(dire_team)s, %(model)s, %(prediction)s, %(probability)s)
+                """)
+                cursor.executemany(insert_game_query, predictions)
+                logger.info(f'Successfully predicted matches {[match["match_id"] for match in predictions]}')
+        except psycopg2.Error as e:
+            logger.info(f'Error created game: {str(e)}')
+
+    def update_predictions(self, match_id, result):
+        try:
+            with self.connection.cursor() as cursor:
+                update_game_query = sql.SQL("""
+                    UPDATE dota_ods.predictions
+                    SET result = %s
+                    WHERE match_id = %s
+                """)
+                cursor.execute(update_game_query, (result, match_id))
+                logger.info(f'Successfully updated result in predictions {match_id}')
+        except psycopg2.Error as e:
+            logger.info(f'Error updating game: {str(e)}')
+
+    def get_max_value(self, table, column):
+        try:
+            with self.connection.cursor() as cursor:
+                schema, table = table.split('.')
+                query = sql.SQL("SELECT MAX({}) FROM {}.{}").format(sql.Identifier(column), sql.Identifier(schema), sql.Identifier(table))
                 cursor.execute(query)
-                series_dict = {}
-
-                for row in cursor.fetchall():
-                    series_id = row[0]
-                    match = {'match_id': row[1], 'match_data': row[2]}
-
-                    if series_id in series_dict:
-                        series_dict[series_id]['matches'].append(match)
-                    else:
-                        series_dict[series_id] = {'series_id': series_id, 'matches': [match]}
-
-                series_list = list(series_dict.values())
-
-                return {'series': series_list}
+                max_value = cursor.fetchone()[0]
+                logger.info(f'Successfully retrieved the maximum value from {table}.{column}')
+                return max_value   
         except psycopg2.Error as e:
-            logger.info(f'Error fetching live series matches: {str(e)}')
-            return {}
-
-    def check_live_series_exists(self, team1_id, team2_id, series_type):
-        try:
-            with self.connection.cursor() as cursor:
-                check_series_query = sql.SQL("""
-                    SELECT 
-                        series_id 
-                    FROM dota_dds.pro_series 
-                    WHERE is_live = True AND series_type = %s AND
-                    ((team1_id = %s AND team2_id = %s) OR (team1_id = %s AND team2_id = %s))
-                """)
-                cursor.execute(check_series_query, (series_type, team1_id, team2_id, team2_id, team1_id))
-                series = cursor.fetchone()
-                logger.info(series)
-                return series[0] if series else None
-        except psycopg2.Error as e:
-            logger.info(f'Error checking series existence: {str(e)}')
+            logger.info(f'Error retrieving maximum value: {str(e)}')
             return None
-
-    def create_series(self, team1_id, team2_id, series_type, team1_score, team2_score):
+        
+    def insert_public_matches(self, matches):
         try:
             with self.connection.cursor() as cursor:
-                insert_series_query = sql.SQL("""
-                    INSERT INTO dota_dds.pro_series (team1_id, team2_id, series_type, team1_score, team2_score, is_live)
-                    VALUES (%s, %s, %s, %s, %s, True) RETURNING series_id
+                insert_query = sql.SQL("""
+                    INSERT INTO dota_dds.public_matches (match_id, start_time, duration, game_mode, avg_rank_tier, radiant_team, dire_team, radiant_win, raw_dt)
+                    VALUES (%(match_id)s, %(start_time)s, %(duration)s, %(game_mode)s, %(avg_rank_tier)s, %(radiant_team)s, %(dire_team)s, %(radiant_win)s, CURRENT_DATE)
+                    ON CONFLICT (match_id) DO NOTHING
                 """)
-                cursor.execute(insert_series_query, (team1_id, team2_id, series_type, team1_score, team2_score))
-                series_id = cursor.fetchone()[0]
-                logger.info(f'Successfully created series {series_id}')
-                return series_id
+                psycopg2.extras.execute_batch(cursor, insert_query, matches)
+                self.connection.commit()
+                logger.info(f'Successfully inserted new matches')
         except psycopg2.Error as e:
-            logger.info(f'Error creating series: {str(e)}')
-            return None
+            logger.info(f'Error inserting new matches: {str(e)}')
 
-    def check_and_update_series_status(self, series_id, winner):
-        try:
-            with self.connection.cursor() as cursor:
-                select_series_query = sql.SQL("""
-                    SELECT 
-                        team1_id, team2_id, team1_score, team2_score, series_type 
-                    FROM dota_dds.pro_series WHERE series_id = %s
-                """)
-                cursor.execute(select_series_query, (series_id,))
-                team1_id, team2_id, team1_score, team2_score, series_type = cursor.fetchone()
+    
 
-                team1_points = 1 if winner == team1_id else 0
-                team2_points = 1 if winner == team2_id else 0
-                team1_score, team2_score = team1_score + team1_points, team2_score + team2_points
+    
+    
 
-                is_live = True
-                if series_type == 1:
-                    if team1_score >= 2 or team2_score >= 2:
-                        is_live = False
-                    else:
-                        is_live = True
-                elif series_type == 0:
-                    if team1_score >= 1 or team2_score >= 1:
-                        is_live = False
-                    else:
-                        is_live = True
-
-                update_series_query = sql.SQL("""
-                    UPDATE dota_dds.pro_series 
-                    SET is_live = %s,
-                        team1_score = %s, 
-                        team2_score = %s
-                    WHERE series_id = %s
-                """)
-                cursor.execute(update_series_query, (is_live, team1_score, team2_score, series_id))
-                logger.info(f'Successfully update series {series_id}')
-        except psycopg2.Error as e:
-            logger.info(f'Error updating series status: {str(e)}')
 
 db = DatabaseService(db_name = db_name, user = user, password = password)
 

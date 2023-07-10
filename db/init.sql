@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS dota_dds.pro_series (
 
 CREATE TABLE IF NOT EXISTS dota_dds.pro_matches (
     match_id bigint PRIMARY KEY NOT NULL,
-    series_id int NOT NULL,
+    series_id int,
     match_data json,
     is_live boolean,
     raw_dt date DEFAULT CURRENT_DATE
@@ -39,5 +39,13 @@ CREATE TABLE IF NOT EXISTS dota_dds.public_matches (
     radiant_win boolean NOT NULL,
     raw_dt date DEFAULT CURRENT_DATE
 );
+
+CREATE TABLE IF NOT EXISTS dota_ods.predictions (
+    match_id bigint NOT NULL,
+    model text NOT NULL,
+    prediction int, 
+    probability float,
+    result int DEFAULT NULL
+)
 
 

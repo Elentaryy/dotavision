@@ -34,12 +34,10 @@ def get_live_series_info():
 def predict_live_games():
     try:
         data = db.get_live_matches()
-        logger.info(f'Data -- {data}, len(data)' )
         if data.get('games'):
             data = format_data(data)  
             teams = data[['radiant_team', 'dire_team']]
             pred = data.drop(columns = ['radiant_team', 'dire_team']).values
-            logger.info(f'Data2 -- {data}, teams -- {teams}, pred -- {pred}')
             teams['prediction'] = xgb.predict(pred)
             teams['proba'] = xgb.predict_proba(pred).max(axis=1)
             return teams.to_dict(orient="records")
