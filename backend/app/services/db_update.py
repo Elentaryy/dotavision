@@ -1,10 +1,8 @@
-import os
 from services.db_service import db
 from services.dota_service import ds
 from utils import check_complete_drafts
-from model.predict import predict_heroes
+from model.predict import predict_heroes, predict_teams
 import logging
-import pickle
 import pandas as pd
 from time import sleep
 
@@ -15,18 +13,29 @@ def check_live_matches():
     
     data =  ds.get_live_matches() # Live dota 2 matches via API
     db_data = [game['match_id'] for game in db.get_live_matches()['games']] # Live dota matches in DB
-
     games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team')] #and game.get('league_id') == 15438
     game_ids = [game['match_id'] for game in games]
     
-    predicted_ids = [game['match_id'] for game in db.get_live_predictions()['predictions']] # Games which are already predicted
-
-    games_to_predict = [game for game in games if check_complete_drafts(game) and game['match_id'] not in predicted_ids] # Live games via API which finished drafting and dont have a prediction yet
+    allowed_leagues = db.get_allowed_leagues() #Leagues to predict
+    
+    predicted_ids = [game['match_id'] for game in db.get_live_predictions()['matches']] # Games which are already predicted
+    games_to_predict = [game for game in games if check_complete_drafts(game) and game['match_id'] not in predicted_ids and game.get('league_id') in allowed_leagues] # Live games via API which finished drafting and dont have a prediction yet
     games_ids_to_predict = [game['match_id'] for game in games_to_predict] 
 
     if games_ids_to_predict:
-        df = pd.DataFrame({'match_id' : games_ids_to_predict, 'match_data' : games_to_predict})
-        db.create_predictions(predict_heroes(df))
+        df_heroes = pd.DataFrame({'match_id' : games_ids_to_predict, 'match_data' : games_to_predict}) #Heroes df to predict using heroes model
+        heroes_predictions = pd.DataFrame(predict_heroes(df_heroes))
+
+        df_teams = pd.DataFrame(db.get_stats_for_prediction(games_ids_to_predict).get('stats'))
+        
+        df_teams['probability'] = heroes_predictions['probability'].where(heroes_predictions['prediction']==1, 1-heroes_predictions['probability'])
+
+        teams_predictions = predict_teams(df_teams)
+        
+        db.create_predictions(heroes_predictions.to_dict(orient='records'))
+        db.create_predictions(teams_predictions)
+        
+        
         
     for game in games:
         if game['match_id'] not in db_data and game['match_id'] != 0:
@@ -43,8 +52,9 @@ def check_live_matches():
             match_info = ds.get_match_info(str(game_id))
             if match_info is not None:
                 result = 1 if match_info['result'].get('radiant_win') == True else 0 
-                db.update_match(match_id = game_id, data = match_info['result'], is_live = False)            
-                db.update_predictions(match_id = game_id, result = result)
+                db.update_match(match_id = game_id, data = match_info['result'], is_live = False)  
+                if match_info['result'].get('leagueid') in allowed_leagues:        
+                    db.update_predictions(match_id = game_id, result = result)
 
 def update_public_matches():
     last_pro_match = db.get_max_value('dota_dds.pro_matches', 'match_id')

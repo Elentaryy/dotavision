@@ -4,17 +4,20 @@ import warnings
 import ast
 from datetime import datetime
 import pickle
-warnings.filterwarnings('ignore')
 
 logger = logging.getLogger('model')
 
 with open('model/models/heroes_xgb_pub.pkl', 'rb') as f:
     heroes_xgb_v1 = pickle.load(f)
+with warnings.catch_warnings():
+    warnings.filterwarnings('ignore')
+    with open('model/models/wtf_model_v2.pkl', 'rb') as f:
+        wtf_xgb = pickle.load(f)
 
 models = [heroes_xgb_v1]
 model_names = ['heroes_standard']
 
-def predict_heroes(df: pd.DataFrame) -> pd.DataFrame:
+def predict_heroes(df):
     df_predict = df.copy()
     df_predict['radiant_team'] = df_predict['match_data'].apply(lambda x: x.get('radiant_team').get('team_name'))
     df_predict['dire_team'] = df_predict['match_data'].apply(lambda x: x.get('dire_team').get('team_name'))
@@ -44,5 +47,12 @@ def predict_heroes(df: pd.DataFrame) -> pd.DataFrame:
     return predictions_df.to_dict(orient="records")
 
 def predict_teams(df):
-     pass
+    model_df = df[['match_id', 'radiant_team', 'dire_team']]
+    df_pred = df.drop(columns = ['match_id', 'radiant_team', 'dire_team'])
+
+    model_df['model'] = 'wtf_model'
+    model_df['prediction'] = wtf_xgb.predict(df_pred.values)
+    model_df['probability'] = wtf_xgb.predict_proba(df_pred.values).max(axis=1)
+
+    return model_df.to_dict(orient="records")
     

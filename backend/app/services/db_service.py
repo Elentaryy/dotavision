@@ -124,38 +124,6 @@ class DatabaseService:
             logger.info(f'Error fetching game statuses: {str(e)}')
             return {}
         
-    def get_live_predictions(self):
-        try:
-            with self.connection.cursor() as cursor:
-                check_predictions_query = sql.SQL("""
-                    SELECT 
-                        p.match_id, 
-                        model,
-                        prediction,
-                        probability
-                    FROM dota_ods.predictions p
-                    INNER JOIN dota_dds.pro_matches pm
-                        ON p.match_id = pm.match_id
-                        AND pm.is_live = True
-                """)
-                cursor.execute(check_predictions_query)
-                predictions = [{'match_id': row[0], 'model': row[1], 'prediction' : row[2], 'probability' : row[3]} for row in cursor.fetchall()]
-                return {'predictions': predictions}
-        except psycopg2.Error as e:
-            logger.info(f'Error returning predictions: {str(e)}')
-            return {}
-        
-    def create_predictions2(self, match_id, radiant_team, dire_team, model, prediction, probability):
-        try:
-            with self.connection.cursor() as cursor:
-                insert_game_query = sql.SQL("""
-                    INSERT INTO dota_ods.predictions (match_id, radiant_team, dire_team, model, prediction, probability)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """)
-                cursor.execute(insert_game_query, (match_id, radiant_team, dire_team, model, prediction, probability))
-                logger.info(f'Successfully created prediction {match_id}')
-        except psycopg2.Error as e:
-            logger.info(f'Error created game: {str(e)}')
 
     def create_predictions(self, predictions):
         try:
@@ -181,6 +149,96 @@ class DatabaseService:
                 logger.info(f'Successfully updated result in predictions {match_id}')
         except psycopg2.Error as e:
             logger.info(f'Error updating game: {str(e)}')
+
+    def get_predictions(self, query, params=None, is_match=False):
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(query, params)
+                matches = {}
+
+                for row in cursor.fetchall():
+                    match_id = row[0]
+                    radiant_team = row[1]
+                    dire_team = row[2]
+                    league_name = row[3]
+                    model = row[4]
+                    prediction = row[5]
+                    probability = row[6]
+                    result = row[7] if is_match else None
+
+                    match_key = (match_id, radiant_team, dire_team, league_name)
+
+                    if match_key not in matches:
+                        matches[match_key] = {'predictions': [], 'result': result}
+
+                    matches[match_key]['predictions'].append({
+                        'model': model,
+                        'prediction': prediction,
+                        'probability': probability
+                    })
+
+                predictions = [
+                    {
+                        'match_id': key[0],
+                        'radiant_team': key[1],
+                        'dire_team': key[2],
+                        'league_name': key[3],
+                        'predictions': value['predictions'],
+                        'result': value['result']
+                    }
+                    for key, value in matches.items()
+                ]
+
+                return predictions
+        except psycopg2.Error as e:
+            logger.info(f'Error returning predictions: {str(e)}')
+            return {}
+
+    def get_live_predictions(self):
+        live_matches_query = sql.SQL("""
+            SELECT 
+                p.match_id, 
+                p.radiant_team,
+                p.dire_team,
+                l.league_name,
+                p.model,
+                p.prediction,
+                p.probability
+            FROM dota_ods.predictions p
+            INNER JOIN dota_dds.pro_matches pm
+                ON p.match_id = pm.match_id
+                AND pm.is_live = True
+            INNER JOIN dota_dds.leagues l
+                ON l.league_id = (pm.match_data ->> 'league_id')::int
+                AND l.allowed = True
+        """)
+
+        predictions = self.get_predictions(live_matches_query)
+        return {'matches': predictions}
+
+    def get_match_prediction(self, match_id: int):
+        match_query = sql.SQL("""
+            SELECT 
+                p.match_id, 
+                p.radiant_team,
+                p.dire_team,
+                l.league_name,
+                p.model,
+                p.prediction,
+                p.probability,
+                p.result
+            FROM dota_ods.predictions p
+            LEFT JOIN dota_dds.pro_matches pm
+                ON p.match_id = pm.match_id
+            INNER JOIN dota_dds.leagues l
+                ON l.league_id = COALESCE((pm.match_data ->> 'league_id')::int, (pm.match_data ->> 'leagueid')::int)
+                AND l.allowed = True
+            WHERE p.match_id = %s
+        """)
+
+        predictions = self.get_predictions(match_query, (match_id,), is_match=True)
+        return predictions[0] if predictions else None
+
 
     def get_max_value(self, table, column):
         try:
@@ -208,11 +266,167 @@ class DatabaseService:
                 logger.info(f'Successfully inserted new matches')
         except psycopg2.Error as e:
             logger.info(f'Error inserting new matches: {str(e)}')
+    
+    def get_allowed_leagues(self):
+        try:
+            with self.connection.cursor() as cursor:
+                query = sql.SQL("""
+                    SELECT league_id
+                    FROM dota_dds.leagues
+                    WHERE allowed = True
+                """)
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                league_ids = [row[0] for row in rows]
+                return league_ids
+        except psycopg2.Error as e:
+            print(f'Error retrieving allowed leagues: {str(e)}')
+            return []
 
-    
+    def get_stats_for_prediction(self, match_ids):
+        try:
+            with self.connection.cursor() as cursor:       
+                query = sql.SQL("""
+                    WITH game AS (
+                        SELECT 
+                            match_id,
+                            match_data,
+                            current_date AS game_dt,
+                            (match_data -> 'radiant_team' ->> 'team_id')::int AS radiant_id,
+                            (match_data -> 'dire_team' ->> 'team_id')::int AS dire_id,
+                            (match_data -> 'radiant_team' ->> 'team_name') AS radiant_name,
+                            (match_data -> 'dire_team' ->> 'team_name') AS dire_name
+                        FROM dota_dds.pro_matches
+                        WHERE match_id IN (SELECT unnest(%s))
+                    ),
 
-    
-    
+                    players AS (
+                        SELECT 
+                            match_id,
+                            (json_array_elements(pm.match_data->'players')->>'account_id')::int AS player_id,
+                            (json_array_elements(pm.match_data->'players')->>'hero_id')::int AS hero_id,
+                            (json_array_elements(pm.match_data->'players')->>'team')::int AS team_number
+                        FROM game pm
+                        
+                    ),
+
+                    player_hero_stats AS (
+
+                    SELECT 
+                        match_id,
+                        AVG(CASE WHEN team_number = 0 THEN phs.avg_kills ELSE NULL END) AS avg_kills1,
+                        AVG(CASE WHEN team_number = 0 THEN phs.avg_deaths ELSE NULL END) AS avg_deaths1,
+                        AVG(CASE WHEN team_number = 0 THEN phs.avg_assists ELSE NULL END) AS avg_assists1,
+                        AVG(CASE WHEN team_number = 0 THEN phs.games_played ELSE NULL END) AS avg_games_played1,
+                        AVG(CASE WHEN team_number = 0 THEN phs.winrate ELSE NULL END) AS avg_winrate1,
+                        AVG(CASE WHEN team_number = 1 THEN phs.avg_kills ELSE NULL END) AS avg_kills2,
+                        AVG(CASE WHEN team_number = 1 THEN phs.avg_deaths ELSE NULL END) AS avg_deaths2,
+                        AVG(CASE WHEN team_number = 1 THEN phs.avg_assists ELSE NULL END) AS avg_assists2,
+                        AVG(CASE WHEN team_number = 1 THEN phs.games_played ELSE NULL END) AS avg_games_played2,
+                        AVG(CASE WHEN team_number = 1 THEN phs.winrate ELSE NULL END) AS avg_winrate2,
+                        AVG(CASE WHEN team_number = 0 THEN hs.avg_kills ELSE NULL END) AS h_avg_kills1,
+                        AVG(CASE WHEN team_number = 0 THEN hs.avg_deaths ELSE NULL END) AS h_avg_deaths1,
+                        AVG(CASE WHEN team_number = 0 THEN hs.avg_assists ELSE NULL END) AS h_avg_assists1,
+                        AVG(CASE WHEN team_number = 0 THEN hs.games_played ELSE NULL END) AS h_avg_games_played1,
+                        AVG(CASE WHEN team_number = 0 THEN hs.winrate ELSE NULL END) AS h_avg_winrate1,
+                        AVG(CASE WHEN team_number = 1 THEN hs.avg_kills ELSE NULL END) AS h_avg_kills2,
+                        AVG(CASE WHEN team_number = 1 THEN hs.avg_deaths ELSE NULL END) AS h_avg_deaths2,
+                        AVG(CASE WHEN team_number = 1 THEN hs.avg_assists ELSE NULL END) AS h_avg_assists2,
+                        AVG(CASE WHEN team_number = 1 THEN hs.games_played ELSE NULL END) AS h_avg_games_played2,
+                        AVG(CASE WHEN team_number = 1 THEN hs.winrate ELSE NULL END) AS h_avg_winrate2,
+                        AVG(CASE WHEN team_number = 0 THEN ps.avg_kills ELSE NULL END) AS p_avg_kills1,
+                        AVG(CASE WHEN team_number = 0 THEN ps.avg_deaths ELSE NULL END) AS p_avg_deaths1,
+                        AVG(CASE WHEN team_number = 0 THEN ps.avg_assists ELSE NULL END) AS p_avg_assists1,
+                        AVG(CASE WHEN team_number = 0 THEN ps.games_played ELSE NULL END) AS p_avg_games_played1,
+                        AVG(CASE WHEN team_number = 0 THEN ps.winrate ELSE NULL END) AS p_avg_winrate1,
+                        AVG(CASE WHEN team_number = 1 THEN ps.avg_kills ELSE NULL END) AS p_avg_kills2,
+                        AVG(CASE WHEN team_number = 1 THEN ps.avg_deaths ELSE NULL END) AS p_avg_deaths2,
+                        AVG(CASE WHEN team_number = 1 THEN ps.avg_assists ELSE NULL END) AS p_avg_assists2,
+                        AVG(CASE WHEN team_number = 1 THEN ps.games_played ELSE NULL END) AS p_avg_games_played2,
+                        AVG(CASE WHEN team_number = 1 THEN ps.winrate ELSE NULL END) AS p_avg_winrate2
+                    FROM players p
+                    LEFT JOIN dota_ods.player_hero_stats phs 
+                        ON phs.account_id = p.player_id
+                        AND phs.hero_id = p.hero_id
+                    LEFT JOIN dota_ods.hero_stats hs 
+                        ON hs.hero_id = p.hero_id
+                    LEFT JOIN dota_ods.player_stats ps
+                        ON ps.account_id = p.player_id
+                    WHERE team_number IN (0, 1)
+                    GROUP BY
+                        p.match_id)
+                        
+                    SELECT 
+                        g.match_id,
+                        radiant_name AS radiant_team,
+                        dire_name AS dire_team,
+                        EXTRACT(YEAR FROM game_dt)::int AS game_year,
+                        EXTRACT(MONTH FROM game_dt)::int AS game_month,
+                        EXTRACT(DAY FROM game_dt)::int AS game_day,
+                        ts.total_matches_past_year AS t1_games_year,
+                        ts.total_wins_past_year AS t1_wins_year,
+                        ts2.total_matches_past_year AS t2_games_year,
+                        ts2.total_wins_past_year AS t2_wins_year,
+                        ts.total_matches_past_3months AS t1_games_3months,
+                        ts.total_wins_past_3months AS t1_wins_3months,
+                        ts2.total_matches_past_3months AS t2_games_3months,
+                        ts2.total_wins_past_3months AS t2_wins_3months,
+                        ts.total_matches_past_2weeks AS t1_games_2weeks,
+                        ts.total_wins_past_2weeks AS t1_wins_2weeks,
+                        ts2.total_matches_past_2weeks AS t2_games_2weeks,
+                        ts2.total_wins_past_2weeks AS t2_wins_2weeks,
+                        tvt.total_games,
+                        tvt.total_wins,
+                        avg_kills1,
+                        avg_deaths1,
+                        avg_assists1,
+                        avg_games_played1,
+                        avg_winrate1,
+                        avg_kills2,
+                        avg_deaths2,
+                        avg_assists2,
+                        avg_games_played2,
+                        avg_winrate2,
+                        h_avg_kills1,
+                        h_avg_deaths1,
+                        h_avg_assists1,
+                        h_avg_games_played1,
+                        h_avg_winrate1,
+                        h_avg_kills2,
+                        h_avg_deaths2,
+                        h_avg_assists2,
+                        h_avg_games_played2,
+                        h_avg_winrate2,
+                        p_avg_kills1,
+                        p_avg_deaths1,
+                        p_avg_assists1,
+                        p_avg_games_played1,
+                        p_avg_winrate1,
+                        p_avg_kills2,
+                        p_avg_deaths2,
+                        p_avg_assists2,
+                        p_avg_games_played2,
+                        p_avg_winrate2
+                    FROM game g
+                    LEFT JOIN dota_ods.teams_stats ts 
+                        ON ts.team_id = g.radiant_id
+                    LEFT JOIN dota_ods.teams_stats ts2 
+                        ON ts2.team_id = g.dire_id
+                    LEFT JOIN dota_ods.team_vs_team tvt 
+                        ON tvt.team_id = g.radiant_id
+                        AND tvt.opp_id = g.dire_id
+                    LEFT JOIN player_hero_stats phs
+                        ON phs.match_id = g.match_id
+                """)
+
+                cursor.execute(query, (match_ids,))  
+                column_names = [desc[0] for desc in cursor.description]
+                rows = cursor.fetchall()
+                stats = [dict(zip(column_names, row)) for row in rows]
+                return {'stats': stats}
+        except psycopg2.Error as e:
+            logger.info(f'Error retrieving stats for match {match_ids}: {str(e)}')
+            return {}
 
 
 db = DatabaseService(db_name = db_name, user = user, password = password)
