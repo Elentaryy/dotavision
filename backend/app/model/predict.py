@@ -42,4 +42,7 @@ def predict_heroes(df: pd.DataFrame) -> pd.DataFrame:
         predictions_df = pd.concat((predictions_df, model_df), ignore_index=True)
 
     return predictions_df.to_dict(orient="records")
+
+def predict_teams(df):
+     pass
     

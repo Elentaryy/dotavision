@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS dota_ods.predictions (
     prediction int, 
     probability float,
     result int DEFAULT NULL
-)
+);
+
+CREATE TABLE IF NOT EXISTS dota_dds.leagues (
+	league_id int PRIMARY KEY NOT NULL,
+	league_name text NOT NULL,
+	tier text NOT NULL,
+	allowed boolean DEFAULT false
+);
+
+
+
 
 

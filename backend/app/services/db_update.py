@@ -36,7 +36,7 @@ def check_live_matches():
             if game.get('scoreboard'):
                 if game.get('scoreboard').get('duration'):
                     game_data = {i:game[i] for i in game if i!='players'}
-                    db.add_match_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game.get('scoreboard').get('duration')))
+                    #db.add_match_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game.get('scoreboard').get('duration')))
                    
     for game_id in db_data:
         if game_id not in game_ids:
@@ -51,7 +51,7 @@ def update_public_matches():
     last_public_match = db.get_max_value('dota_dds.public_matches', 'match_id')
 
     data = []
-    for _ in range(100):
+    for _ in range(10):
         try:
             sleep(1)
             match_data = ds.get_public_matches(last_pro_match)
