@@ -5,7 +5,7 @@ import psycopg2
 from psycopg2 import sql
 from psycopg2.extras import execute_values, Json
 from psycopg2 import OperationalError
-from psycopg2.extensions import register_adapter, AsIs
+from psycopg2.extensions import register_adapter
 from time import sleep
 
 register_adapter(dict, Json)

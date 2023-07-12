@@ -4,3 +4,5 @@ pandas
 numpy
 matplotlib
 python-telegram-bot
+python-telegram-bot[job-queue]
+APScheduler==3.10.1
