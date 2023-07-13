@@ -253,6 +253,99 @@ class DatabaseService:
             logger.info(f'Error retrieving maximum value: {str(e)}')
             return None
         
+    def get_tournaments_stats(self):
+        try:
+            with self.connection.cursor() as cursor:
+                query = sql.SQL("""
+                    SELECT 
+                        league_name,
+                        model,
+                        COUNT(*) AS total_games,
+                        COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END) AS total_correct,
+                        COUNT(CASE WHEN prediction != result THEN p.match_id ELSE NULL END) AS total_incorrect,
+                        ROUND((COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END)::float / COUNT(*)::float)::numeric, 2) AS winrate
+                    FROM dota_ods.predictions p
+                    LEFT JOIN dota_dds.pro_matches pm 
+                        ON pm.match_id = p.match_id 
+                    LEFT JOIN dota_dds.leagues l 
+                        ON l.league_id = (pm.match_data ->> 'leagueid')::int
+                    WHERE league_name IS NOT NULL
+                    AND is_live = false 
+                    AND prediction IS NOT NULL
+                    AND allowed = True
+                    AND league_id NOT IN (14783)
+                    GROUP BY 
+                        1, 2
+                """)
+                cursor.execute(query)
+                stats = {}
+
+                rows = cursor.fetchall()
+                for row in rows:
+                    league_name = row[0]
+                    model_name = row[1]
+                    total_games = row[2]
+                    total_correct = row[3]
+                    total_incorrect = row[4]
+                    winrate = row[5]
+
+                    if league_name in stats:
+                        stats[league_name]['predictions'].append({
+                            'model_name': model_name,
+                            'total_games': total_games,
+                            'total_correct': total_correct,
+                            'total_incorrect': total_incorrect,
+                            'winrate': winrate
+                        })
+                    else:
+                        stats[league_name] = {
+                            'predictions': [{
+                                'model_name': model_name,
+                                'total_games': total_games,
+                                'total_correct': total_correct,
+                                'total_incorrect': total_incorrect,
+                                'winrate': winrate
+                            }]
+                        }
+
+                logger.info(f'Successfully retrieved tournament stats.')
+        except psycopg2.Error as e:
+            logger.info(f'Error retrieving tournament stats: {str(e)}')
+        
+        return {'tournaments': [{'league_name': k, 'predictions': v['predictions']} for k, v in stats.items()]}
+    
+    def get_recent_stats(self):
+        try:
+            with self.connection.cursor() as cursor:
+                query = sql.SQL("""
+                    SELECT 
+                        COUNT(*) AS total_predictions,
+                        COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END) AS total_correct,
+                        COUNT(CASE WHEN prediction != result THEN p.match_id ELSE NULL END) AS total_incorrect,
+                        ROUND((COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END)::float / NULLIF(COUNT(*)::float, 0))::numeric, 2) AS winrate
+                    FROM dota_ods.predictions p
+                    LEFT JOIN dota_dds.pro_matches pm
+                        ON pm.match_id = p.match_id
+                    LEFT JOIN dota_dds.leagues l 
+                        ON l.league_id = (pm.match_data ->> 'leagueid')::int
+                    WHERE 
+                        p.raw_dt = current_date - interval '1 day'
+                        AND p.prediction IS NOT NULL
+                        --AND l.allowed = True
+                        AND model = 'heroes_standard'
+                """)
+                cursor.execute(query)
+
+                result = cursor.fetchone()
+                column_names = [desc[0] for desc in cursor.description]
+                stats = dict(zip(column_names, result))
+                if stats['total_predictions'] == 0:
+                    raise ValueError("No predictions were made.")
+                return stats
+        except psycopg2.Error as e:
+            logger.info(f'Error retrieving recent stats: {str(e)}')
+            return None
+        
     def insert_public_matches(self, matches):
         try:
             with self.connection.cursor() as cursor:

@@ -2,18 +2,16 @@ from dotenv import load_dotenv
 import os
 import atexit
 import logging
-import requests
-from telegram import Update
+from pytz import timezone
 from telegram.ext import ApplicationBuilder
-from telegram.error import BadRequest
-import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 from handlers.predictions import predictions_handler, live_predictions_handler, matches_by_league_handler, match_details_handler, match_prediction_handler
 from handlers.start import start_handler, back_to_start_handler
 from handlers.about import about_handler
 from handlers.limits import limits_handler
-from handlers.stats import stats_handler
+from handlers.stats import stats_handler, tournament_details_handler
+from jobs.fetch_predictions import fetch_predictions
+from jobs.recent_stats import fetch_stats
 
 load_dotenv()
 BOT_TOKEN= os.getenv('BOT_TOKEN')
@@ -27,30 +25,7 @@ logging.basicConfig(
 
 logger = logging.getLogger('bot_main')
 
-seen_matches = set()
-
-async def fetch_predictions():
-    try:
-        logger.info('We fetching')
-        r = requests.get("http://backend/api/predictions/live")
-        data = r.json()
-        if r.status_code == 200:
-            if data['matches']:
-                for match in data['matches']:
-                    for prediction in match['predictions']:
-                        if prediction['model'] == 'heroes_standard':
-                            team_name = match['radiant_team'] if prediction['prediction'] == 1 else match['dire_team']
-                            probability = prediction['probability']
-                            message = f"🏆 {match['radiant_team']} - {match['dire_team']}\n\n"
-                            message += f"🎮 League name: {match['league_name']}\n\n"
-                            message += f"🥇 Winner: *{team_name}*\n\n"
-                            message += f"📈 Probability: {probability*100:.2f}%\n"
-                            if match['match_id'] not in seen_matches:
-                                seen_matches.add(match['match_id'])
-                                await application.bot.send_message(chat_id=CHANNEL_ID, text=message, parse_mode='HTML')
-    except Exception as e:
-        logger.info(f'Something went wrong while fetching predictions {str(e)}')
-    await asyncio.sleep(30)
+moscow_tz = timezone('Europe/Moscow')
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -65,9 +40,11 @@ if __name__ == '__main__':
     application.add_handler(limits_handler)
     application.add_handler(stats_handler)
     application.add_handler(match_prediction_handler)
+    application.add_handler(tournament_details_handler)
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(fetch_predictions, 'interval', seconds=40)
+    scheduler = AsyncIOScheduler(timezone=moscow_tz)
+    scheduler.add_job(fetch_predictions, 'interval', hours=20, args=(application, CHANNEL_ID))
+    scheduler.add_job(fetch_stats, 'cron', hour=1, minute=0, args=(application, CHANNEL_ID))
     scheduler.start()
     
     application.run_polling()

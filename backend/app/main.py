@@ -1,6 +1,7 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, APIRouter
 import logging 
 from api.routers.predictions_router import predictions_router
+from api.routers.stats_router import stats_router
 from services.db_update import update_public_matches
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -13,9 +14,14 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+api_router = APIRouter()
+api_router.include_router(predictions_router, prefix="/predictions")
+api_router.include_router(stats_router, prefix="/stats")
+
 app = FastAPI()
 
-app.include_router(predictions_router, prefix="/api")
+
+app.include_router(api_router, prefix="/api")
 # scheduler = BackgroundScheduler()
 # scheduler.add_job(
 #         update_public_matches,
