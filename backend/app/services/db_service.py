@@ -1,5 +1,6 @@
 import logging
 import os
+import pandas as pd
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2 import sql
@@ -375,6 +376,25 @@ class DatabaseService:
         except psycopg2.Error as e:
             print(f'Error retrieving allowed leagues: {str(e)}')
             return []
+        
+    def get_league_names(self, match_ids):
+        try:
+            with self.connection.cursor() as cursor:
+                query = sql.SQL("""
+                    SELECT
+                        pm.match_id,
+                        l.league_name
+                    FROM dota_dds.pro_matches pm
+                    LEFT JOIN dota_dds.leagues l 
+                        ON l.league_id = COALESCE(pm.match_data ->> 'leagueid', pm.match_data ->> 'league_id')::int
+                    WHERE match_id IN (SELECT unnest(%s))
+                """)
+                cursor.execute(query, (match_ids,))
+                df = pd.DataFrame(cursor.fetchall(), columns=['match_id', 'league_name'])
+                return df
+        except psycopg2.Error as e:
+            logger.info(f'Error fetching league names: {str(e)}')
+            return pd.DataFrame()
 
     def get_stats_for_prediction(self, match_ids):
         try:

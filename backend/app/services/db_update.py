@@ -1,5 +1,6 @@
 from services.db_service import db
 from services.dota_service import ds
+from services.google_service import gs
 from utils import check_complete_drafts
 from model.predict import predict_heroes, predict_teams
 import logging
@@ -7,6 +8,20 @@ import pandas as pd
 from time import sleep
 
 logger = logging.getLogger('db_update')
+
+def add_league_names(df):
+    match_ids = df['match_id'].unique().tolist()
+
+    # Fetch league names for these match_ids
+    league_names_df = db.get_league_names(match_ids)
+
+    df = df.merge(league_names_df, on='match_id', how='left')
+
+    cols = df.columns.tolist()
+    cols.insert(1, cols.pop(cols.index('league_name')))
+    df = df.reindex(columns=cols)
+
+    return df
 
 
 def check_live_matches():
@@ -31,10 +46,16 @@ def check_live_matches():
         df_teams['probability'] = heroes_predictions['probability'].where(heroes_predictions['prediction']==1, 1-heroes_predictions['probability'])
 
         teams_predictions = predict_teams(df_teams)
+
+        google_predictions = add_league_names(heroes_predictions)
+        gs.write_prediction(google_predictions, 'DotaVision')
         
         db.create_predictions(heroes_predictions.to_dict(orient='records'))
         db.create_predictions(teams_predictions)
+
         
+        
+
         
         
     for game in games:
@@ -53,8 +74,10 @@ def check_live_matches():
             if match_info is not None:
                 result = 1 if match_info['result'].get('radiant_win') == True else 0 
                 db.update_match(match_id = game_id, data = match_info['result'], is_live = False)  
-                if match_info['result'].get('leagueid') in allowed_leagues:        
+                if match_info['result'].get('leagueid') in allowed_leagues: 
+                    logger.info('result')       
                     db.update_predictions(match_id = game_id, result = result)
+                    gs.update_result(match_id = game_id, result = result, sheet_name = 'DotaVision')
 
 def update_public_matches():
     last_pro_match = db.get_max_value('dota_dds.pro_matches', 'match_id')

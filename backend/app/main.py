@@ -20,7 +20,6 @@ api_router.include_router(stats_router, prefix="/stats")
 
 app = FastAPI()
 
-
 app.include_router(api_router, prefix="/api")
 # scheduler = BackgroundScheduler()
 # scheduler.add_job(
