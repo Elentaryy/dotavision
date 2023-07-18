@@ -11,7 +11,7 @@ with open('model/models/heroes_xgb_pub.pkl', 'rb') as f:
     heroes_xgb_v1 = pickle.load(f)
 with warnings.catch_warnings():
     warnings.filterwarnings('ignore')
-    with open('model/models/wtf_model_v2.pkl', 'rb') as f:
+    with open('model/train/models/teams_modelv2.pkl', 'rb') as f:
         wtf_xgb = pickle.load(f)
 
 models = [heroes_xgb_v1]
@@ -50,7 +50,7 @@ def predict_teams(df):
     model_df = df[['match_id', 'radiant_team', 'dire_team']]
     df_pred = df.drop(columns = ['match_id', 'radiant_team', 'dire_team'])
 
-    model_df['model'] = 'wtf_model'
+    model_df['model'] = 'teams_model'
     model_df['prediction'] = wtf_xgb.predict(df_pred.values)
     model_df['probability'] = wtf_xgb.predict_proba(df_pred.values).max(axis=1)
 

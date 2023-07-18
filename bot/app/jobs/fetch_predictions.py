@@ -14,7 +14,7 @@ async def fetch_predictions(app, channel_id):
             if data['matches']:
                 for match in data['matches']:
                     for prediction in match['predictions']:
-                        if prediction['model'] == 'heroes_standard':
+                        if prediction['model'] == 'teams_model':
                             team_name = match['radiant_team'] if prediction['prediction'] == 1 else match['dire_team']
                             probability = prediction['probability']
                             message = f"🏆 {match['radiant_team']} - {match['dire_team']}\n\n"

@@ -47,6 +47,6 @@ if __name__ == '__main__':
     scheduler.add_job(fetch_stats, 'cron', hour=1, minute=0, args=(application, CHANNEL_ID))
     scheduler.start()
     
-    application.run_polling()
+    #application.run_polling()
 
     atexit.register(lambda: scheduler.shutdown())

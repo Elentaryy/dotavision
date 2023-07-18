@@ -3,15 +3,12 @@ import json
 import logging
 from dotenv import load_dotenv
 import gspread
-from gspread_dataframe import set_with_dataframe
 from oauth2client.service_account import ServiceAccountCredentials
 
 logger = logging.getLogger('Google')
-
 load_dotenv()
 
 google_creds = os.getenv('GOOGLE_CREDS')
-
 json_creds = json.loads(google_creds)
 
 class GoogleService:

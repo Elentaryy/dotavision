@@ -23,7 +23,6 @@ def add_league_names(df):
 
     return df
 
-
 def check_live_matches():
     
     data =  ds.get_live_matches() # Live dota 2 matches via API
@@ -45,19 +44,14 @@ def check_live_matches():
         
         df_teams['probability'] = heroes_predictions['probability'].where(heroes_predictions['prediction']==1, 1-heroes_predictions['probability'])
 
-        teams_predictions = predict_teams(df_teams)
+        teams_predictions = pd.DataFrame(predict_teams(df_teams))
 
-        google_predictions = add_league_names(heroes_predictions)
+        google_predictions = add_league_names(teams_predictions)
         gs.write_prediction(google_predictions, 'DotaVision')
         
         db.create_predictions(heroes_predictions.to_dict(orient='records'))
-        db.create_predictions(teams_predictions)
-
-        
-        
-
-        
-        
+        db.create_predictions(teams_predictions.to_dict(orient='records'))
+     
     for game in games:
         if game['match_id'] not in db_data and game['match_id'] != 0:
             db.create_match(match_id = game['match_id'], series_id = None, match_data = game)
