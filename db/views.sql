@@ -1,5 +1,237 @@
-CREATE TABLE IF NOT EXISTS dota_ods.pro_matches_ml AS (
-WITh teams_matches AS (
+CREATE MATERIALIZED VIEW IF NOT EXISTS dota_ods.teams_stats
+TABLESPACE pg_default
+AS WITH matches AS (
+         SELECT '1970-01-01 00:00:00'::timestamp without time zone + ((pm.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval AS datetime,
+            pm.match_data,
+            pm.match_data ->> 'match_id'::text AS match_id,
+            pm.match_data ->> 'radiant_team_id'::text AS radiant_id,
+            pm.match_data ->> 'dire_team_id'::text AS dire_id,
+                CASE
+                    WHEN (pm.match_data ->> 'radiant_win'::text) = 'true'::text THEN 1
+                    ELSE 0
+                END AS result
+           FROM dota_dds.pro_matches pm
+             JOIN dota_dds.leagues l ON l.league_id = ((pm.match_data ->> 'leagueid'::text)::integer)
+          WHERE pm.is_live = false AND (pm.match_data ->> 'radiant_team_id'::text) IS NOT NULL AND (pm.match_data ->> 'dire_team_id'::text) IS NOT NULL
+        ), full_matches AS (
+         SELECT matches.match_data,
+            matches.radiant_id AS team_id,
+            matches.dire_id AS opp_id,
+            matches.result,
+            matches.datetime
+           FROM matches
+        UNION ALL
+         SELECT matches.match_data,
+            matches.dire_id AS team_id,
+            matches.radiant_id AS opp_id,
+                CASE
+                    WHEN matches.result = 1 THEN 0
+                    ELSE 1
+                END AS result,
+            matches.datetime
+           FROM matches
+        ), team_stats AS (
+         SELECT full_matches.team_id,
+            count(
+                CASE
+                    WHEN full_matches.datetime >= (CURRENT_DATE - '1 year'::interval) THEN 1
+                    ELSE NULL::integer
+                END) AS total_matches_past_year,
+            count(
+                CASE
+                    WHEN full_matches.datetime >= (CURRENT_DATE - '1 year'::interval) AND full_matches.result = 1 THEN 1
+                    ELSE NULL::integer
+                END) AS total_wins_past_year,
+            count(
+                CASE
+                    WHEN full_matches.datetime >= (CURRENT_DATE - '3 mons'::interval) THEN 1
+                    ELSE NULL::integer
+                END) AS total_matches_past_3months,
+            count(
+                CASE
+                    WHEN full_matches.datetime >= (CURRENT_DATE - '3 mons'::interval) AND full_matches.result = 1 THEN 1
+                    ELSE NULL::integer
+                END) AS total_wins_past_3months,
+            count(
+                CASE
+                    WHEN full_matches.datetime >= (CURRENT_DATE - '14 days'::interval) THEN 1
+                    ELSE NULL::integer
+                END) AS total_matches_past_2weeks,
+            count(
+                CASE
+                    WHEN full_matches.datetime >= (CURRENT_DATE - '14 days'::interval) AND full_matches.result = 1 THEN 1
+                    ELSE NULL::integer
+                END) AS total_wins_past_2weeks
+           FROM full_matches
+          GROUP BY full_matches.team_id
+        ), current_winstreak AS (
+         SELECT rn.team_id,
+            sum(rn.result) AS total_wins,
+            count(rn.result) AS total_games
+           FROM ( SELECT full_matches.team_id,
+                    full_matches.result,
+                    row_number() OVER (PARTITION BY full_matches.team_id ORDER BY full_matches.datetime DESC) AS rn
+                   FROM full_matches) rn
+          WHERE rn.rn <= 10
+          GROUP BY rn.team_id
+        )
+ SELECT ts.team_id::integer AS team_id,
+    ts.total_matches_past_year,
+    ts.total_wins_past_year,
+    ts.total_matches_past_3months,
+    ts.total_wins_past_3months,
+    ts.total_matches_past_2weeks,
+    ts.total_wins_past_2weeks,
+    cw.total_games,
+    cw.total_wins
+   FROM team_stats ts
+     LEFT JOIN current_winstreak cw ON ts.team_id = cw.team_id
+WITH DATA;
+
+CREATE MATERIALIZED VIEW dota_ods.team_vs_team
+TABLESPACE pg_default
+AS WITH matches AS (
+         SELECT '1970-01-01 00:00:00'::timestamp without time zone + ((pm.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval AS datetime,
+            pm.match_data,
+            pm.match_data ->> 'match_id'::text AS match_id,
+            pm.match_data ->> 'radiant_team_id'::text AS radiant_id,
+            pm.match_data ->> 'dire_team_id'::text AS dire_id,
+                CASE
+                    WHEN (pm.match_data ->> 'radiant_win'::text) = 'true'::text THEN 1
+                    ELSE 0
+                END AS result
+           FROM dota_dds.pro_matches pm
+             JOIN dota_dds.leagues l ON l.league_id = ((pm.match_data ->> 'leagueid'::text)::integer)
+          WHERE pm.is_live = false AND (pm.match_data ->> 'radiant_team_id'::text) IS NOT NULL AND (pm.match_data ->> 'dire_team_id'::text) IS NOT NULL
+        ), full_matches AS (
+         SELECT matches.match_data,
+            matches.radiant_id AS team_id,
+            matches.dire_id AS opp_id,
+            matches.result,
+            matches.datetime
+           FROM matches
+        UNION ALL
+         SELECT matches.match_data,
+            matches.dire_id AS team_id,
+            matches.radiant_id AS opp_id,
+                CASE
+                    WHEN matches.result = 1 THEN 0
+                    ELSE 1
+                END AS result,
+            matches.datetime
+           FROM matches
+        ), team_vs_team AS (
+         SELECT full_matches.team_id,
+            full_matches.opp_id,
+            count(*) AS total_games,
+            sum(full_matches.result) AS total_wins
+           FROM full_matches
+          WHERE full_matches.datetime >= (CURRENT_DATE - '1 year'::interval)
+          GROUP BY full_matches.team_id, full_matches.opp_id
+        )
+ SELECT team_vs_team.team_id::integer AS team_id,
+    team_vs_team.opp_id::integer AS opp_id,
+    team_vs_team.total_games,
+    team_vs_team.total_wins
+   FROM team_vs_team
+WITH DATA;
+
+CREATE MATERIALIZED VIEW dota_ods.hero_stats
+TABLESPACE pg_default
+AS WITH player_hero_games AS (
+         SELECT (player.value ->> 'account_id'::text)::integer AS account_id,
+            (player.value ->> 'hero_id'::text)::integer AS hero_id,
+            (player.value ->> 'kills'::text)::integer AS kills,
+            (player.value ->> 'deaths'::text)::integer AS deaths,
+            (player.value ->> 'assists'::text)::integer AS assists,
+            (player.value ->> 'team_number'::text)::integer AS team_number,
+                CASE
+                    WHEN (pro_matches.match_data ->> 'radiant_win'::text) = 'true'::text THEN 1
+                    ELSE 0
+                END AS result
+           FROM dota_dds.pro_matches,
+            LATERAL json_array_elements(pro_matches.match_data -> 'players'::text) player(value)
+          WHERE ('1970-01-01 00:00:00'::timestamp without time zone + ((pro_matches.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval) > (CURRENT_DATE - '1 year'::interval)
+        )
+ SELECT player_hero_games.hero_id,
+    avg(player_hero_games.kills) AS avg_kills,
+    avg(player_hero_games.deaths) AS avg_deaths,
+    avg(player_hero_games.assists) AS avg_assists,
+    count(*) AS games_played,
+    count(
+        CASE
+            WHEN player_hero_games.result = 1 AND player_hero_games.team_number = 0 OR player_hero_games.result = 0 AND player_hero_games.team_number = 1 THEN player_hero_games.account_id
+            ELSE NULL::integer
+        END)::double precision / count(*)::double precision AS winrate
+   FROM player_hero_games
+  GROUP BY player_hero_games.hero_id
+WITH DATA;
+
+CREATE MATERIALIZED VIEW dota_ods.player_hero_stats
+TABLESPACE pg_default
+AS WITH player_hero_games AS (
+         SELECT (player.value ->> 'account_id'::text)::integer AS account_id,
+            (player.value ->> 'hero_id'::text)::integer AS hero_id,
+            (player.value ->> 'kills'::text)::integer AS kills,
+            (player.value ->> 'deaths'::text)::integer AS deaths,
+            (player.value ->> 'assists'::text)::integer AS assists,
+            (player.value ->> 'team_number'::text)::integer AS team_number,
+                CASE
+                    WHEN (pro_matches.match_data ->> 'radiant_win'::text) = 'true'::text THEN 1
+                    ELSE 0
+                END AS result
+           FROM dota_dds.pro_matches,
+            LATERAL json_array_elements(pro_matches.match_data -> 'players'::text) player(value)
+          WHERE ('1970-01-01 00:00:00'::timestamp without time zone + ((pro_matches.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval) > (CURRENT_DATE - '1 year'::interval)
+        )
+ SELECT player_hero_games.account_id,
+    player_hero_games.hero_id,
+    avg(player_hero_games.kills) AS avg_kills,
+    avg(player_hero_games.deaths) AS avg_deaths,
+    avg(player_hero_games.assists) AS avg_assists,
+    count(*) AS games_played,
+    count(
+        CASE
+            WHEN player_hero_games.result = 1 AND player_hero_games.team_number = 0 OR player_hero_games.result = 0 AND player_hero_games.team_number = 1 THEN player_hero_games.account_id
+            ELSE NULL::integer
+        END)::double precision / count(*)::double precision AS winrate
+   FROM player_hero_games
+  GROUP BY player_hero_games.account_id, player_hero_games.hero_id
+WITH DATA;
+
+CREATE MATERIALIZED VIEW dota_ods.player_stats
+TABLESPACE pg_default
+AS WITH player_hero_games AS (
+         SELECT (player.value ->> 'account_id'::text)::integer AS account_id,
+            (player.value ->> 'hero_id'::text)::integer AS hero_id,
+            (player.value ->> 'kills'::text)::integer AS kills,
+            (player.value ->> 'deaths'::text)::integer AS deaths,
+            (player.value ->> 'assists'::text)::integer AS assists,
+            (player.value ->> 'team_number'::text)::integer AS team_number,
+                CASE
+                    WHEN (pro_matches.match_data ->> 'radiant_win'::text) = 'true'::text THEN 1
+                    ELSE 0
+                END AS result
+           FROM dota_dds.pro_matches,
+            LATERAL json_array_elements(pro_matches.match_data -> 'players'::text) player(value)
+          WHERE ('1970-01-01 00:00:00'::timestamp without time zone + ((pro_matches.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval) > (CURRENT_DATE - '1 year'::interval)
+        )
+ SELECT player_hero_games.account_id,
+    avg(player_hero_games.kills) AS avg_kills,
+    avg(player_hero_games.deaths) AS avg_deaths,
+    avg(player_hero_games.assists) AS avg_assists,
+    count(*) AS games_played,
+    count(
+        CASE
+            WHEN player_hero_games.result = 1 AND player_hero_games.team_number = 0 OR player_hero_games.result = 0 AND player_hero_games.team_number = 1 THEN player_hero_games.account_id
+            ELSE NULL::integer
+        END)::double precision / count(*)::double precision AS winrate
+   FROM player_hero_games
+  GROUP BY player_hero_games.account_id
+WITH DATA;
+
+CREATE TABLE IF NOT EXISTS dota_ods.pro_matches_ml_full_v2 AS (
+WITH teams_matches AS (
 SELECT 
 	match_id,
 	match_data ->> 'radiant_team_id' AS team_id,
@@ -113,7 +345,6 @@ allowed AS (
 	FROM dota_dds.pro_matches pm 
 	LEFT JOIN dota_dds.leagues l 
 	ON l.league_id = (pm.match_data ->> 'leagueid')::int
---WHERE l.allowed = True
 ),
 
 
@@ -121,7 +352,7 @@ allowed AS (
 matches AS (
 SELECT 
  	pm.match_id,
- 	to_timestamp((match_data ->> 'start_time')::int) at time zone 'Europe/Moscow' AS match_time,
+ 	to_timestamp((match_data ->> 'start_time')::integer) at time zone 'Europe/Moscow' AS match_time,
 	(player.value ->> 'account_id'::text)::integer AS account_id,
 	(player.value ->> 'hero_id'::text)::integer AS hero_id,
 	(player.value ->> 'kills'::text)::integer AS kills,
@@ -135,12 +366,10 @@ SELECT
 FROM allowed pm,
 LATERAL json_array_elements(pm.match_data -> 'players'::text) player(value)
    
-WHERE ('1970-01-01 00:00:00'::timestamp without time zone + ((pm.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval) > (CURRENT_DATE - '1 year'::interval)
+WHERE ('1970-01-01 00:00:00'::timestamp without time zone + ((pm.match_data ->> 'start_time'::text)::bigint)::double precision * '00:00:01'::interval) > (CURRENT_DATE - '2 years'::interval)
 AND (player.value ->> 'team_number'::text)::integer IN (0, 1)
 AND is_live = False
 ),
-
-
 
 playerhero_winrates AS (
     SELECT 
@@ -243,17 +472,17 @@ player_winrates AS (
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS previous_wins,
             SUM(kills::int) OVER (
-                PARTITION BY account_id, hero_id
+                PARTITION BY account_id
                 ORDER BY match_time
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS total_kills,
             SUM(deaths::int) OVER (
-                PARTITION BY account_id, hero_id
+                PARTITION BY account_id
                 ORDER BY match_time
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS total_deaths,
             SUM(assists::int) OVER (
-                PARTITION BY account_id, hero_id
+                PARTITION BY account_id
                 ORDER BY match_time
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS total_assists
@@ -301,17 +530,17 @@ hero_winrates AS (
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS previous_wins,
             SUM(kills::int) OVER (
-                PARTITION BY account_id, hero_id
+                PARTITION BY hero_id
                 ORDER BY match_time
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS total_kills,
             SUM(deaths::int) OVER (
-                PARTITION BY account_id, hero_id
+                PARTITION BY hero_id
                 ORDER BY match_time
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS total_deaths,
             SUM(assists::int) OVER (
-                PARTITION BY account_id, hero_id
+                PARTITION BY hero_id
                 ORDER BY match_time
                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
             ) AS total_assists
@@ -358,7 +587,90 @@ FROM matches m
 LEFT JOIN playerhero_winrates ph ON m.match_id = ph.match_id AND m.account_id = ph.account_id AND m.hero_id = ph.hero_id
 LEFT JOIN player_winrates p ON m.match_id = p.match_id AND m.account_id = p.account_id
 LEFT JOIN hero_winrates h ON m.match_id = h.match_id AND m.hero_id = h.hero_id
-GROUP BY m.match_id, m.match_time)
+GROUP BY m.match_id, m.match_time),
+
+hero_pairs_together AS (
+SELECT
+	a.match_id,
+	a.match_time,
+	a.hero_id AS hero1,
+	b.hero_id AS hero2,
+	a.team_number,
+	CASE WHEN a.team_number = 0 THEN a.result ELSE 1 - a.result END AS result
+FROM matches a
+JOIN matches b ON a.match_id = b.match_id AND a.team_number = b.team_number AND a.hero_id != b.hero_id
+),
+
+pair_winrates_together AS (
+SELECT
+	match_id,
+	hero1,
+	hero2,
+	team_number,
+	result,
+	COUNT(*) OVER (
+	  PARTITION BY hero1, hero2
+	  ORDER BY match_time
+	  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+	) AS games,
+	SUM(result) OVER (
+      PARTITION BY hero1, hero2
+      ORDER BY match_time
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS wins
+  FROM hero_pairs_together
+),
+
+hero_pairs_against AS (
+SELECT
+	a.match_id,
+	a.match_time,
+	a.hero_id AS hero1,
+	b.hero_id AS hero2,
+	a.team_number,
+	CASE WHEN a.team_number = 0 THEN a.result ELSE 1 - a.result END AS result
+FROM matches a
+JOIN matches b ON a.match_id = b.match_id AND a.team_number != b.team_number AND a.hero_id != b.hero_id
+),
+
+pair_winrates_against AS (
+SELECT
+	match_id,
+	hero1,
+	hero2,
+	team_number,
+	result,
+	COUNT(*) OVER (
+	  PARTITION BY hero1, hero2
+	  ORDER BY match_time
+	  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+	) AS games,
+	SUM(result) OVER (
+      PARTITION BY hero1, hero2
+      ORDER BY match_time
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS wins
+  FROM hero_pairs_against
+),
+
+matches_together AS (
+SELECT
+	pwt.match_id,
+	AVG(CASE WHEN pwt.team_number = 0 THEN CASE WHEN pwt.games = 0 THEN 0 ELSE pwt.wins::float / pwt.games END END) AS avg_winrate_together_1,
+	AVG(CASE WHEN pwt.team_number = 1 THEN CASE WHEN pwt.games = 0 THEN 0 ELSE pwt.wins::float / pwt.games END END) AS avg_winrate_together_2
+FROM pair_winrates_together pwt
+GROUP BY
+	1),
+	
+matches_against AS (
+SELECT
+	pwa.match_id,
+	AVG(CASE WHEN pwa.team_number = 0 THEN CASE WHEN pwa.games = 0 THEN 0 ELSE pwa.wins::float / pwa.games END END) AS avg_winrate_against_1,
+	AVG(CASE WHEN pwa.team_number = 1 THEN CASE WHEN pwa.games = 0 THEN 0 ELSE pwa.wins::float / pwa.games END END) AS avg_winrate_against_2
+FROM pair_winrates_against pwa
+GROUP BY
+	1
+)
 
 SELECT 
 	pm.match_data,
@@ -415,10 +727,18 @@ SELECT
 	tp.team2_player_deaths,
 	tp.team2_player_assists,
 	tp.team2_player_games,
-	tp.team2_player_winrate
+	tp.team2_player_winrate,
+	mt.avg_winrate_together_1,
+	mt.avg_winrate_together_2,
+	ma.avg_winrate_against_1,
+	ma.avg_winrate_against_2
 FROM dota_dds.pro_matches pm 
 LEFT JOIN dota_dds.leagues l 
 	ON l.league_id = (pm.match_data ->> 'leagueid')::int
+LEFT JOIN matches_together mt
+	ON mt.match_id = pm.match_id
+LEFT JOIN matches_against ma
+	ON ma.match_id = pm.match_id
 LEFT JOIN teams_stats ts 
 	ON ts.team_id = (pm.match_data ->> 'radiant_team_id')::int
 	AND ts.opp_id = (pm.match_data ->> 'dire_team_id')::int
@@ -427,7 +747,5 @@ LEFT JOIN teams_players tp
 	ON tp.match_id = pm.match_id
 WHERE is_live = False
 AND match_data ->> 'radiant_team_id' IS NOT NULL AND match_data ->> 'dire_team_id' IS NOT NULL
-AND team1_playerhero_kills IS NOT NULL
-
+AND to_timestamp((match_data ->> 'start_time')::int) at time zone 'Europe/Moscow' > current_date - interval '13 months'
 )
-

@@ -24,17 +24,18 @@ async def get_tournament_details(update: Update, context: ContextTypes.DEFAULT_T
 
     tournaments = context.user_data['tournaments']
     tournament = next((t for t in tournaments if t['league_name'] == league_name), None)
-    
+
     if tournament:
-        model = next((p for p in tournament['predictions'] if p['model_name'] == 'heroes_standard'), None)
-        if model:
-            stats = f"Model: {model['model_name']}\n" \
-                     f"Total Games: {model['total_games']}\n" \
-                     f"Total Correct: {model['total_correct']}\n" \
-                     f"Total Incorrect: {model['total_incorrect']}\n" \
-                     f"🥇 Win Rate: {model['winrate']*100:.2f}%"
-        else:
-            stats = 'No stats available for heroes_standard model.'
+        predictions = tournament['predictions']
+        stats = ""
+        for prediction in predictions:
+            stats += f"Model: {prediction['model_name']}\n" \
+                     f"Total Games: {prediction['total_games']}\n" \
+                     f"Total Correct: {prediction['total_correct']}\n" \
+                     f"Total Incorrect: {prediction['total_incorrect']}\n" \
+                     f"🥇 Win Rate: {prediction['winrate']*100:.2f}%\n\n"
+        if not stats:
+            stats = 'No stats available for any model.'
     else:
         stats = 'No stats available for this tournament.'
 

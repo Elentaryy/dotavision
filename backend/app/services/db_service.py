@@ -94,6 +94,24 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error updating game: {str(e)}')
 
+    def get_match_info(self, match_id):
+        try:
+            with self.connection.cursor() as cursor:
+                get_game_query = sql.SQL("""
+                    SELECT match_id, result
+                    FROM dota_ods.predictions
+                    WHERE match_id = %s
+                """)
+                cursor.execute(get_game_query, (match_id,))
+                row = cursor.fetchone()  # fetches one row from the result
+                if row:
+                    return {'match_id': row[0], 'result': row[1]}  # pack results into dictionary
+                else:
+                    return {}
+        except psycopg2.Error as e:
+            logger.info(f'Error fetching match info: {str(e)}')
+            return {}
+
     def add_match_status(self, match_id, match_data, ingame_dttm):
         try:
             with self.connection.cursor() as cursor:
@@ -124,6 +142,8 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error fetching game statuses: {str(e)}')
             return {}
+        
+
         
 
     def create_predictions(self, predictions):
@@ -332,7 +352,7 @@ class DatabaseService:
                     WHERE 
                         p.raw_dt = current_date - interval '1 day'
                         AND p.prediction IS NOT NULL
-                        --AND l.allowed = True
+                        AND l.allowed = True
                         AND model = 'heroes_standard'
                 """)
                 cursor.execute(query)
@@ -395,6 +415,21 @@ class DatabaseService:
         except psycopg2.Error as e:
             logger.info(f'Error fetching league names: {str(e)}')
             return pd.DataFrame()
+        
+    def refresh_materialized_views(self):
+        view_names = ['dota_ods.hero_stats',
+                    'dota_ods.player_hero_stat',
+                    'dota_ods.player_stats',
+                    'dota_ods.teams_stats',
+                    'dota_ods.team_vs_team']
+        try:
+            with self.connection.cursor() as cursor:
+                for view_name in view_names:
+                    query = f"REFRESH MATERIALIZED VIEW {view_name}"
+                    cursor.execute(query)
+            logger.info("Successfully refreshed all materialized views.")
+        except psycopg2.Error as e:
+            logger.info(f'Error refreshing materialized views: {str(e)}')
 
     def get_stats_for_prediction(self, match_ids):
         try:

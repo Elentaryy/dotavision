@@ -7,12 +7,15 @@ import pickle
 
 logger = logging.getLogger('model')
 
-with open('model/models/heroes_xgb_pub.pkl', 'rb') as f:
-    heroes_xgb_v1 = pickle.load(f)
 with warnings.catch_warnings():
     warnings.filterwarnings('ignore')
-    with open('model/train/models/teams_modelv2.pkl', 'rb') as f:
+    
+    with open('model/train/models/heroes_model_urg.pkl', 'rb') as f:
+        heroes_xgb_v1 = pickle.load(f)
+    with open('model/train/models/teams_model.pkl', 'rb') as f:
         wtf_xgb = pickle.load(f)
+
+    
 
 models = [heroes_xgb_v1]
 model_names = ['heroes_standard']
@@ -48,7 +51,7 @@ def predict_heroes(df):
 
 def predict_teams(df):
     model_df = df[['match_id', 'radiant_team', 'dire_team']]
-    df_pred = df.drop(columns = ['match_id', 'radiant_team', 'dire_team'])
+    df_pred = df.drop(columns = ['match_id', 'radiant_team', 'dire_team']).fillna(0)
 
     model_df['model'] = 'teams_model'
     model_df['prediction'] = wtf_xgb.predict(df_pred.values)

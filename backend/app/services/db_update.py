@@ -3,6 +3,7 @@ from services.dota_service import ds
 from services.google_service import gs
 from utils import check_complete_drafts
 from model.predict import predict_heroes, predict_teams
+from datetime import date
 import logging
 import pandas as pd
 from time import sleep
@@ -24,7 +25,7 @@ def add_league_names(df):
     return df
 
 def check_live_matches():
-    
+    current_date = date.today().strftime('%Y-%m-%d')
     data =  ds.get_live_matches() # Live dota 2 matches via API
     db_data = [game['match_id'] for game in db.get_live_matches()['games']] # Live dota matches in DB
     games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team')] #and game.get('league_id') == 15438
@@ -46,11 +47,13 @@ def check_live_matches():
 
         teams_predictions = pd.DataFrame(predict_teams(df_teams))
 
-        google_predictions = add_league_names(teams_predictions)
+        google_predictions = add_league_names(heroes_predictions)
+        google_predictions['date'] = date.today().strftime('%Y-%m-%d')
+        
         gs.write_prediction(google_predictions, 'DotaVision')
         
-        db.create_predictions(heroes_predictions.to_dict(orient='records'))
-        db.create_predictions(teams_predictions.to_dict(orient='records'))
+        db.create_predictions(pd.concat((heroes_predictions, teams_predictions)).to_dict(orient='records'))
+        #db.create_predictions(teams_predictions.to_dict(orient='records'))
      
     for game in games:
         if game['match_id'] not in db_data and game['match_id'] != 0:
@@ -69,7 +72,7 @@ def check_live_matches():
                 result = 1 if match_info['result'].get('radiant_win') == True else 0 
                 db.update_match(match_id = game_id, data = match_info['result'], is_live = False)  
                 if match_info['result'].get('leagueid') in allowed_leagues: 
-                    logger.info('result')       
+        
                     db.update_predictions(match_id = game_id, result = result)
                     gs.update_result(match_id = game_id, result = result, sheet_name = 'DotaVision')
 

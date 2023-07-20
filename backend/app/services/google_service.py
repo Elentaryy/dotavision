@@ -34,18 +34,16 @@ class GoogleService:
     def update_result(self, match_id, result, sheet_name):
         sheet = self.client.open(sheet_name)
         worksheet = sheet.get_worksheet(0)
-        
+
         try:
-            cell = worksheet.find(str(match_id))
+            match_cells = worksheet.findall(str(match_id))
             result_col_number = worksheet.find("Result").col
         except gspread.CellNotFound:
             logger.info(f'Match ID {match_id} or Result column not found.')
             return
 
-        result_cell = worksheet.cell(cell.row, result_col_number)
-        
-        result_cell.value = result
-        worksheet.update_cells([result_cell])
+        for cell in match_cells:
+            worksheet.update_cell(cell.row, result_col_number, result)
 
 gs = GoogleService()
 
