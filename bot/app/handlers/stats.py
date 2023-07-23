@@ -29,11 +29,12 @@ async def get_tournament_details(update: Update, context: ContextTypes.DEFAULT_T
         predictions = tournament['predictions']
         stats = ""
         for prediction in predictions:
-            stats += f"Model: {prediction['model_name']}\n" \
-                     f"Total Games: {prediction['total_games']}\n" \
-                     f"Total Correct: {prediction['total_correct']}\n" \
-                     f"Total Incorrect: {prediction['total_incorrect']}\n" \
-                     f"🥇 Win Rate: {prediction['winrate']*100:.2f}%\n\n"
+            if prediction['model_name'] == 'heroes_standard':
+                stats += f"Model: {prediction['model_name']}\n" \
+                        f"Total Games: {prediction['total_games']}\n" \
+                        f"Total Correct: {prediction['total_correct']}\n" \
+                        f"Total Incorrect: {prediction['total_incorrect']}\n" \
+                        f"🥇 Win Rate: {prediction['winrate']*100:.2f}%\n\n"
         if not stats:
             stats = 'No stats available for any model.'
     else:

@@ -232,6 +232,7 @@ class DatabaseService:
             INNER JOIN dota_dds.leagues l
                 ON l.league_id = (pm.match_data ->> 'league_id')::int
                 AND l.allowed = True
+            WHERE p.raw_dt >= current_date - INTERVAL '1 day'
         """)
 
         predictions = self.get_predictions(live_matches_query)
@@ -293,6 +294,7 @@ class DatabaseService:
                     WHERE league_name IS NOT NULL
                     AND is_live = false 
                     AND prediction IS NOT NULL
+                    AND probability > 0.57
                     AND allowed = True
                     AND league_id NOT IN (14783)
                     GROUP BY 
@@ -350,8 +352,9 @@ class DatabaseService:
                     LEFT JOIN dota_dds.leagues l 
                         ON l.league_id = (pm.match_data ->> 'leagueid')::int
                     WHERE 
-                        p.raw_dt = current_date - interval '1 day'
+                        p.raw_dt = '2023-07-23'
                         AND p.prediction IS NOT NULL
+                        AND p.probability > 0.59
                         AND l.allowed = True
                         AND model = 'heroes_standard'
                 """)
@@ -418,7 +421,7 @@ class DatabaseService:
         
     def refresh_materialized_views(self):
         view_names = ['dota_ods.hero_stats',
-                    'dota_ods.player_hero_stat',
+                    'dota_ods.player_hero_stats',
                     'dota_ods.player_stats',
                     'dota_ods.teams_stats',
                     'dota_ods.team_vs_team']

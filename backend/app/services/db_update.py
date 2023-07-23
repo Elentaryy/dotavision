@@ -27,54 +27,58 @@ def add_league_names(df):
 def check_live_matches():
     current_date = date.today().strftime('%Y-%m-%d')
     data =  ds.get_live_matches() # Live dota 2 matches via API
-    db_data = [game['match_id'] for game in db.get_live_matches()['games']] # Live dota matches in DB
-    games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team')] #and game.get('league_id') == 15438
-    game_ids = [game['match_id'] for game in games]
-    
-    allowed_leagues = db.get_allowed_leagues() #Leagues to predict
-    
-    predicted_ids = [game['match_id'] for game in db.get_live_predictions()['matches']] # Games which are already predicted
-    games_to_predict = [game for game in games if check_complete_drafts(game) and game['match_id'] not in predicted_ids and game.get('league_id') in allowed_leagues] # Live games via API which finished drafting and dont have a prediction yet
-    games_ids_to_predict = [game['match_id'] for game in games_to_predict] 
 
-    if games_ids_to_predict:
-        df_heroes = pd.DataFrame({'match_id' : games_ids_to_predict, 'match_data' : games_to_predict}) #Heroes df to predict using heroes model
-        heroes_predictions = pd.DataFrame(predict_heroes(df_heroes))
+    if data:
+        db_data = [game['match_id'] for game in db.get_live_matches()['games']] # Live dota matches in DB
+        games = [game for game in data['result']['games'] if game.get('radiant_team') and game.get('dire_team')] #and game.get('league_id') == 15438
+        game_ids = [game['match_id'] for game in games]
+        
+        allowed_leagues = db.get_allowed_leagues() #Leagues to predict
+        
+        predicted_ids = [game['match_id'] for game in db.get_live_predictions()['matches']] # Games which are already predicted
+        games_to_predict = [game for game in games if check_complete_drafts(game) and game['match_id'] not in predicted_ids and game.get('league_id') in allowed_leagues] # Live games via API which finished drafting and dont have a prediction yet
+        games_ids_to_predict = [game['match_id'] for game in games_to_predict] 
 
-        df_teams = pd.DataFrame(db.get_stats_for_prediction(games_ids_to_predict).get('stats'))
-        
-        df_teams['probability'] = heroes_predictions['probability'].where(heroes_predictions['prediction']==1, 1-heroes_predictions['probability'])
+        if games_ids_to_predict:
+            df_heroes = pd.DataFrame({'match_id' : games_ids_to_predict, 'match_data' : games_to_predict}) #Heroes df to predict using heroes model
+            heroes_predictions = pd.DataFrame(predict_heroes(df_heroes))
 
-        teams_predictions = pd.DataFrame(predict_teams(df_teams))
+            df_teams = pd.DataFrame(db.get_stats_for_prediction(games_ids_to_predict).get('stats'))
+            
+            df_teams['probability'] = heroes_predictions['probability'].where(heroes_predictions['prediction']==1, 1-heroes_predictions['probability'])
 
-        google_predictions = add_league_names(heroes_predictions)
-        google_predictions['date'] = date.today().strftime('%Y-%m-%d')
+            teams_predictions = pd.DataFrame(predict_teams(df_teams))
+
+            google_predictions = add_league_names(heroes_predictions)
+            google_predictions['date'] = date.today().strftime('%Y-%m-%d')
+            
+            gs.write_prediction(google_predictions, 'DotaVision')
+            
+            db.create_predictions(pd.concat((heroes_predictions, teams_predictions)).to_dict(orient='records'))
+            #db.create_predictions(heroes_predictions.to_dict(orient='records'))
         
-        gs.write_prediction(google_predictions, 'DotaVision')
-        
-        db.create_predictions(pd.concat((heroes_predictions, teams_predictions)).to_dict(orient='records'))
-        #db.create_predictions(teams_predictions.to_dict(orient='records'))
-     
-    for game in games:
-        if game['match_id'] not in db_data and game['match_id'] != 0:
-            db.create_match(match_id = game['match_id'], series_id = None, match_data = game)
-        if game['match_id'] in db_data:
-            db.update_match(match_id = game['match_id'], data = game, is_live = True)
-            if game.get('scoreboard'):
-                if game.get('scoreboard').get('duration'):
-                    game_data = {i:game[i] for i in game if i!='players'}
-                    #db.add_match_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game.get('scoreboard').get('duration')))
-                   
-    for game_id in db_data:
-        if game_id not in game_ids:
-            match_info = ds.get_match_info(str(game_id))
-            if match_info is not None:
-                result = 1 if match_info['result'].get('radiant_win') == True else 0 
-                db.update_match(match_id = game_id, data = match_info['result'], is_live = False)  
-                if match_info['result'].get('leagueid') in allowed_leagues: 
-        
-                    db.update_predictions(match_id = game_id, result = result)
-                    gs.update_result(match_id = game_id, result = result, sheet_name = 'DotaVision')
+        for game in games:
+            if game['match_id'] not in db_data and game['match_id'] != 0:
+                db.create_match(match_id = game['match_id'], series_id = None, match_data = game)
+            if game['match_id'] in db_data:
+                db.update_match(match_id = game['match_id'], data = game, is_live = True)
+                if game.get('scoreboard'):
+                    if game.get('scoreboard').get('duration'):
+                        game_data = {i:game[i] for i in game if i!='players'}
+                        #db.add_match_status(match_id = game['match_id'], match_data = game_data, ingame_dttm = int(game.get('scoreboard').get('duration')))
+                    
+        for game_id in db_data:
+            if game_id not in game_ids:
+                match_info = ds.get_match_info(str(game_id))
+                if match_info is not None:
+                    result = 1 if match_info['result'].get('radiant_win') == True else 0 
+                    db.update_match(match_id = game_id, data = match_info['result'], is_live = False)  
+                    if match_info['result'].get('leagueid') in allowed_leagues: 
+            
+                        db.update_predictions(match_id = game_id, result = result)
+                        gs.update_result(match_id = game_id, result = result, sheet_name = 'DotaVision')
+    else:
+        logger.info(f'Data is None')
 
 def update_public_matches():
     last_pro_match = db.get_max_value('dota_dds.pro_matches', 'match_id')

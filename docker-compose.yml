@@ -16,12 +16,12 @@ services:
       - DATABASE_URL=${DATABASE_URL}
     volumes:
       - ./backend:/backend
-  frontend:
-    build: ./frontend
-    ports:
-      - 3000:80
-    volumes:
-      - ./frontend:/app
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - 3000:80
+  #   volumes:
+  #     - ./frontend:/app
   bot:
     build: ./bot
     volumes:

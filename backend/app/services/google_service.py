@@ -27,9 +27,15 @@ class GoogleService:
         worksheet = sheet.sheet1  
 
         data = dataframe.values.tolist()
+        
+        data.reverse()
 
         for row in data:
-            worksheet.append_row(row)
+            prediction = row[6]  
+            worksheet.insert_row(row, 2)
+            if prediction < 0.58:  
+                pred_skip_col_number = worksheet.find("Prediction result").col
+                worksheet.update_cell(2, pred_skip_col_number, "Skip")  
 
     def update_result(self, match_id, result, sheet_name):
         sheet = self.client.open(sheet_name)
@@ -38,12 +44,24 @@ class GoogleService:
         try:
             match_cells = worksheet.findall(str(match_id))
             result_col_number = worksheet.find("Result").col
+            prediction_col_number = worksheet.find("Prediction").col
+            pred_result_col_number = worksheet.find("Prediction result").col
         except gspread.CellNotFound:
-            logger.info(f'Match ID {match_id} or Result column not found.')
+            logger.info(f'Match ID {match_id} or columns not found.')
             return
 
         for cell in match_cells:
             worksheet.update_cell(cell.row, result_col_number, result)
+            prediction = worksheet.cell(cell.row, prediction_col_number).value
+            prediction_skip = worksheet.cell(cell.row, pred_result_col_number).value
+
+            if prediction_skip != "Skip":  
+                if int(prediction) == int(result):
+                    pred_result = "Win"
+                else:
+                    pred_result = "Lose"
+
+                worksheet.update_cell(cell.row, pred_result_col_number, pred_result)
 
 gs = GoogleService()
 

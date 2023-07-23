@@ -63,7 +63,7 @@ async def get_match_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     match_id = int(query.data.split("_", 1)[1])
     match = [match for match in context.user_data['matches'] if match['match_id'] == match_id][0]
-    text = '\n\n'.join([f"🤖 Model: {prediction['model']}\n🏆 Winner: {match['radiant_team'] if prediction['prediction'] == 1 else match['dire_team']}\n📈 Probability: {prediction['probability']*100:.2f}%" for prediction in match['predictions']])
+    text = '\n\n'.join([f"🤖 Model: {prediction['model']}\n🏆 Winner: {match['radiant_team'] if prediction['prediction'] == 1 else match['dire_team']}\n📈 Probability: {prediction['probability']*100:.2f}%" for prediction in match['predictions'] if prediction['model'] == 'heroes_standard'])
 
     keyboard = [[InlineKeyboardButton("Back", callback_data=f'league_{match["league_name"]}')]]
     reply_markup = InlineKeyboardMarkup(keyboard)

@@ -9,8 +9,8 @@ logger = logging.getLogger('model')
 
 with warnings.catch_warnings():
     warnings.filterwarnings('ignore')
-    
-    with open('model/train/models/heroes_model_urg.pkl', 'rb') as f:
+
+    with open('model/train/models/heroes_model_bali.pkl', 'rb') as f:
         heroes_xgb_v1 = pickle.load(f)
     with open('model/train/models/teams_model.pkl', 'rb') as f:
         wtf_xgb = pickle.load(f)
