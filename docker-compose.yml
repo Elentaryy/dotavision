@@ -4,6 +4,8 @@ services:
     build: ./db
     ports:
       - 5432:5432
+    environment:
+      - TZ=Europe/Moscow
     volumes:
       - postgres_data:/var/lib/postgresql/data
   backend:
@@ -14,14 +16,9 @@ services:
       - db
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - TZ=Europe/Moscow
     volumes:
       - ./backend:/backend
-  # frontend:
-  #   build: ./frontend
-  #   ports:
-  #     - 3000:80
-  #   volumes:
-  #     - ./frontend:/app
   bot:
     build: ./bot
     volumes:
@@ -29,5 +26,7 @@ services:
     depends_on:
       - backend
     restart: always
+    environment:
+      - TZ=Europe/Moscow
 volumes:
   postgres_data:

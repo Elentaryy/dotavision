@@ -34,7 +34,7 @@ async def fetch_predictions(app, channel_id):
                         message += f"🎮 League name: {match['league_name']}\n\n"
                         message += f"🥇 Winner: {team_name}\n\n"
                         message += f"📈 Probability: {probability*100:.2f}%\n\n"
-                        message += f"🥇 Prediction: {team_name if probability > 0.59 else 'Skip'}\n\n"  
+                        message += f"🔮 Prediction: {team_name if probability > 0.59 else 'Skip'}\n"  
                         current_matches.add(match['match_id'])
                         seen_matches.add(match['match_id'])
                         message_id = await app.bot.send_message(chat_id=channel_id, text=message, parse_mode='HTML')

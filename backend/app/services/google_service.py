@@ -33,7 +33,7 @@ class GoogleService:
         for row in data:
             prediction = row[6]  
             worksheet.insert_row(row, 2)
-            if prediction < 0.58:  
+            if prediction < 0.59:  
                 pred_skip_col_number = worksheet.find("Prediction result").col
                 worksheet.update_cell(2, pred_skip_col_number, "Skip")  
 

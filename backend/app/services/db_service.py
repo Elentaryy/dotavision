@@ -66,7 +66,7 @@ class DatabaseService:
                 games = [{'match_id': row[0], 'match_data': row[1]} for row in cursor.fetchall()]
                 return {'games': games}
         except psycopg2.Error as e:
-            logger.info(f'Error checking live games: {str(e)}')
+            logger.error(f'Error checking live games: {str(e)}')
             return {}
         
     def create_match(self, match_id, series_id, match_data):
@@ -79,7 +79,7 @@ class DatabaseService:
                 cursor.execute(insert_game_query, (match_id, series_id, match_data))
                 logger.info(f'Successfully created match {match_id}')
         except psycopg2.Error as e:
-            logger.info(f'Error created game: {str(e)}')
+            logger.error(f'Error created game: {str(e)}')
 
     def update_match(self, match_id, data, is_live):
         try:
@@ -92,7 +92,7 @@ class DatabaseService:
                 """)
                 cursor.execute(update_game_query, (is_live, data, match_id))
         except psycopg2.Error as e:
-            logger.info(f'Error updating game: {str(e)}')
+            logger.error(f'Error updating game: {str(e)}')
 
     def get_match_info(self, match_id):
         try:
@@ -109,7 +109,7 @@ class DatabaseService:
                 else:
                     return {}
         except psycopg2.Error as e:
-            logger.info(f'Error fetching match info: {str(e)}')
+            logger.error(f'Error fetching match info: {str(e)}')
             return {}
 
     def add_match_status(self, match_id, match_data, ingame_dttm):
@@ -125,7 +125,7 @@ class DatabaseService:
                 """)
                 cursor.execute(insert_game_query, (match_id, match_data, ingame_dttm, match_id, ingame_dttm))
         except psycopg2.Error as e:
-            logger.info(f'Error created game: {str(e)}')
+            logger.error(f'Error created game: {str(e)}')
 
     def get_match_statuses(self, match_id):
         try:
@@ -140,7 +140,7 @@ class DatabaseService:
                 statuses = [{'match_data': row[1], 'ingame_dttm': row[2]} for row in cursor.fetchall()]
                 return {'match_id': match_id, 'statuses': statuses}
         except psycopg2.Error as e:
-            logger.info(f'Error fetching game statuses: {str(e)}')
+            logger.error(f'Error fetching game statuses: {str(e)}')
             return {}
         
 
@@ -156,7 +156,7 @@ class DatabaseService:
                 cursor.executemany(insert_game_query, predictions)
                 logger.info(f'Successfully predicted matches {[match["match_id"] for match in predictions]}')
         except psycopg2.Error as e:
-            logger.info(f'Error created game: {str(e)}')
+            logger.error(f'Error created game: {str(e)}')
 
     def update_predictions(self, match_id, result):
         try:
@@ -169,7 +169,7 @@ class DatabaseService:
                 cursor.execute(update_game_query, (result, match_id))
                 logger.info(f'Successfully updated result in predictions {match_id}')
         except psycopg2.Error as e:
-            logger.info(f'Error updating game: {str(e)}')
+            logger.error(f'Error updating game: {str(e)}')
 
     def get_predictions(self, query, params=None, is_match=False):
         try:
@@ -212,7 +212,7 @@ class DatabaseService:
 
                 return predictions
         except psycopg2.Error as e:
-            logger.info(f'Error returning predictions: {str(e)}')
+            logger.error(f'Error returning predictions: {str(e)}')
             return {}
 
     def get_live_predictions(self):
@@ -272,7 +272,7 @@ class DatabaseService:
                 logger.info(f'Successfully retrieved the maximum value from {table}.{column}')
                 return max_value   
         except psycopg2.Error as e:
-            logger.info(f'Error retrieving maximum value: {str(e)}')
+            logger.error(f'Error retrieving maximum value: {str(e)}')
             return None
         
     def get_tournaments_stats(self):
@@ -333,7 +333,7 @@ class DatabaseService:
 
                 logger.info(f'Successfully retrieved tournament stats.')
         except psycopg2.Error as e:
-            logger.info(f'Error retrieving tournament stats: {str(e)}')
+            logger.error(f'Error retrieving tournament stats: {str(e)}')
         
         return {'tournaments': [{'league_name': k, 'predictions': v['predictions']} for k, v in stats.items()]}
     
@@ -352,7 +352,7 @@ class DatabaseService:
                     LEFT JOIN dota_dds.leagues l 
                         ON l.league_id = (pm.match_data ->> 'leagueid')::int
                     WHERE 
-                        p.raw_dt = '2023-07-23'
+                        p.raw_dt = current_date - interval '1 day'
                         AND p.prediction IS NOT NULL
                         AND p.probability > 0.59
                         AND l.allowed = True
@@ -367,7 +367,7 @@ class DatabaseService:
                     raise ValueError("No predictions were made.")
                 return stats
         except psycopg2.Error as e:
-            logger.info(f'Error retrieving recent stats: {str(e)}')
+            logger.error(f'Error retrieving recent stats: {str(e)}')
             return None
         
     def insert_public_matches(self, matches):
@@ -382,7 +382,7 @@ class DatabaseService:
                 self.connection.commit()
                 logger.info(f'Successfully inserted new matches')
         except psycopg2.Error as e:
-            logger.info(f'Error inserting new matches: {str(e)}')
+            logger.error(f'Error inserting new matches: {str(e)}')
     
     def get_allowed_leagues(self):
         try:
@@ -416,7 +416,7 @@ class DatabaseService:
                 df = pd.DataFrame(cursor.fetchall(), columns=['match_id', 'league_name'])
                 return df
         except psycopg2.Error as e:
-            logger.info(f'Error fetching league names: {str(e)}')
+            logger.error(f'Error fetching league names: {str(e)}')
             return pd.DataFrame()
         
     def refresh_materialized_views(self):
@@ -432,7 +432,7 @@ class DatabaseService:
                     cursor.execute(query)
             logger.info("Successfully refreshed all materialized views.")
         except psycopg2.Error as e:
-            logger.info(f'Error refreshing materialized views: {str(e)}')
+            logger.error(f'Error refreshing materialized views: {str(e)}')
 
     def get_stats_for_prediction(self, match_ids):
         try:
@@ -576,7 +576,7 @@ class DatabaseService:
                 stats = [dict(zip(column_names, row)) for row in rows]
                 return {'stats': stats}
         except psycopg2.Error as e:
-            logger.info(f'Error retrieving stats for match {match_ids}: {str(e)}')
+            logger.error(f'Error retrieving stats for match {match_ids}: {str(e)}')
             return {}
 
 
