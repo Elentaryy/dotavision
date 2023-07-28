@@ -1,219 +1,185 @@
-import logging
 import os
-import pandas as pd
-from dotenv import load_dotenv
+import logging
 import psycopg2
-from psycopg2 import sql
+from psycopg2 import sql, OperationalError
 from psycopg2.extras import execute_values, Json
-from psycopg2 import OperationalError
 from psycopg2.extensions import register_adapter
 from time import sleep
+from dotenv import load_dotenv
+from collections import defaultdict
+import pandas as pd
 
 register_adapter(dict, Json)
 load_dotenv()
 
 logger = logging.getLogger('db_service')
 
-db_name = os.getenv('POSTGRES_DB')
-user = os.getenv('POSTGRES_USER')
-password = os.getenv('POSTGRES_PASSWORD')
-
 class DatabaseService:
-    def __init__(self, db_name, user, password, host='db', port='5432'):
-        self.db_name = db_name
-        self.user = user
-        self.password = password
-        self.host = host
-        self.port = port
+    MAX_RETRIES = 6
+
+    def __init__(self, host='db', port='5432'):
+        self.connection_parameters = {
+            'dbname': os.getenv('POSTGRES_DB'),
+            'user': os.getenv('POSTGRES_USER'),
+            'password': os.getenv('POSTGRES_PASSWORD'),
+            'host': host,
+            'port': port,
+        }
         self.connection = None
         self.connect()
 
     def connect(self):
-        for i in range(1, 7):
+        for i in range(1, self.MAX_RETRIES + 1):
             try:
-                self.connection = psycopg2.connect(
-                        dbname=self.db_name,
-                        user=self.user,
-                        password=self.password,
-                        host=self.host,
-                        port=self.port
-                    )
+                self.connection = psycopg2.connect(**self.connection_parameters)
                 self.connection.autocommit = True
-                logger.info(f'Successfully connected to db')
-                break
+                logger.info('Successfully connected to db')
+                return
             except OperationalError as e:
                 logger.error(f'Error {str(e)} occured, trying to reconnect in {i**2} seconds')
                 sleep(i**2)
-        else:
-            raise Exception("Unable to connect to the database after several attempts")
+
+        raise Exception("Unable to connect to the database after several attempts")
 
     def close(self):
-        if self.connection is not None:
+        if self.connection:
             self.connection.close()
-            logger.info(f'Connection to the database has been closed')
+            logger.info('Connection to the database has been closed')
 
-    def get_live_matches(self):
-        try:
-            with self.connection.cursor() as cursor:
-                check_live_query = sql.SQL("""
-                    SELECT 
-                        match_id, 
-                        match_data 
-                    FROM dota_dds.pro_matches 
-                    WHERE is_live = True
-                """)
-                cursor.execute(check_live_query)
-                games = [{'match_id': row[0], 'match_data': row[1]} for row in cursor.fetchall()]
-                return {'games': games}
-        except psycopg2.Error as e:
-            logger.error(f'Error checking live games: {str(e)}')
-            return {}
-        
-    def create_match(self, match_id, series_id, match_data):
-        try:
-            with self.connection.cursor() as cursor:
-                insert_game_query = sql.SQL("""
-                    INSERT INTO dota_dds.pro_matches (match_id, series_id, match_data, is_live)
-                    VALUES (%s, %s, %s, True)
-                """)
-                cursor.execute(insert_game_query, (match_id, series_id, match_data))
-                logger.info(f'Successfully created match {match_id}')
-        except psycopg2.Error as e:
-            logger.error(f'Error created game: {str(e)}')
-
-    def update_match(self, match_id, data, is_live):
-        try:
-            with self.connection.cursor() as cursor:
-                update_game_query = sql.SQL("""
-                    UPDATE dota_dds.pro_matches
-                    SET is_live = %s,
-                        match_data = %s
-                    WHERE match_id = %s
-                """)
-                cursor.execute(update_game_query, (is_live, data, match_id))
-        except psycopg2.Error as e:
-            logger.error(f'Error updating game: {str(e)}')
-
-    def get_match_info(self, match_id):
-        try:
-            with self.connection.cursor() as cursor:
-                get_game_query = sql.SQL("""
-                    SELECT match_id, result
-                    FROM dota_ods.predictions
-                    WHERE match_id = %s
-                """)
-                cursor.execute(get_game_query, (match_id,))
-                row = cursor.fetchone()  # fetches one row from the result
-                if row:
-                    return {'match_id': row[0], 'result': row[1]}  # pack results into dictionary
-                else:
-                    return {}
-        except psycopg2.Error as e:
-            logger.error(f'Error fetching match info: {str(e)}')
-            return {}
-
-    def add_match_status(self, match_id, match_data, ingame_dttm):
-        try:
-            with self.connection.cursor() as cursor:
-                insert_game_query = sql.SQL("""
-                    INSERT INTO dota_dds.pro_matches_statuses (match_id, match_data, ingame_dttm)
-                    SELECT %s, %s, %s
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM dota_dds.pro_matches_statuses
-                        WHERE match_id = %s AND ingame_dttm = %s
-                    )
-                """)
-                cursor.execute(insert_game_query, (match_id, match_data, ingame_dttm, match_id, ingame_dttm))
-        except psycopg2.Error as e:
-            logger.error(f'Error created game: {str(e)}')
-
-    def get_match_statuses(self, match_id):
-        try:
-            with self.connection.cursor() as cursor:
-                get_game_query = sql.SQL("""
-                    SELECT match_id, match_data, ingame_dttm 
-                    FROM dota_dds.pro_matches_statuses 
-                    WHERE match_id = %s
-                    ORDER BY ingame_dttm ASC
-                """)
-                cursor.execute(get_game_query, (match_id,))
-                statuses = [{'match_data': row[1], 'ingame_dttm': row[2]} for row in cursor.fetchall()]
-                return {'match_id': match_id, 'statuses': statuses}
-        except psycopg2.Error as e:
-            logger.error(f'Error fetching game statuses: {str(e)}')
-            return {}
-        
-
-        
-
-    def create_predictions(self, predictions):
-        try:
-            with self.connection.cursor() as cursor:
-                insert_game_query = sql.SQL("""
-                    INSERT INTO dota_ods.predictions (match_id, radiant_team, dire_team, model, prediction, probability)
-                    VALUES (%(match_id)s, %(radiant_team)s, %(dire_team)s, %(model)s, %(prediction)s, %(probability)s)
-                """)
-                cursor.executemany(insert_game_query, predictions)
-                logger.info(f'Successfully predicted matches {[match["match_id"] for match in predictions]}')
-        except psycopg2.Error as e:
-            logger.error(f'Error created game: {str(e)}')
-
-    def update_predictions(self, match_id, result):
-        try:
-            with self.connection.cursor() as cursor:
-                update_game_query = sql.SQL("""
-                    UPDATE dota_ods.predictions
-                    SET result = %s
-                    WHERE match_id = %s
-                """)
-                cursor.execute(update_game_query, (result, match_id))
-                logger.info(f'Successfully updated result in predictions {match_id}')
-        except psycopg2.Error as e:
-            logger.error(f'Error updating game: {str(e)}')
-
-    def get_predictions(self, query, params=None, is_match=False):
+    def _execute_query(self, query, method, error_message, params=None):
         try:
             with self.connection.cursor() as cursor:
                 cursor.execute(query, params)
-                matches = {}
-
-                for row in cursor.fetchall():
-                    match_id = row[0]
-                    radiant_team = row[1]
-                    dire_team = row[2]
-                    league_name = row[3]
-                    model = row[4]
-                    prediction = row[5]
-                    probability = row[6]
-                    result = row[7] if is_match else None
-
-                    match_key = (match_id, radiant_team, dire_team, league_name)
-
-                    if match_key not in matches:
-                        matches[match_key] = {'predictions': [], 'result': result}
-
-                    matches[match_key]['predictions'].append({
-                        'model': model,
-                        'prediction': prediction,
-                        'probability': probability
-                    })
-
-                predictions = [
-                    {
-                        'match_id': key[0],
-                        'radiant_team': key[1],
-                        'dire_team': key[2],
-                        'league_name': key[3],
-                        'predictions': value['predictions'],
-                        'result': value['result']
-                    }
-                    for key, value in matches.items()
-                ]
-
-                return predictions
+                if method == 'commit':
+                    self.connection.commit()
+                elif method == 'commitmany':
+                    cursor.executemany(query, params)
+                    self.connection.commit()
+                elif method == 'fetch':
+                    return [{'match_data': row[1], 'ingame_dttm': row[2]} for row in cursor.fetchall()]
+                elif method == 'fetchall':
+                    return cursor.fetchall()
         except psycopg2.Error as e:
-            logger.error(f'Error returning predictions: {str(e)}')
+            logger.error(f'{error_message}: {str(e)}')
             return {}
+        
+    def _execute_batch_query(self, query, params, error_message):
+        try:
+            psycopg2.extras.execute_batch(self.cursor, query, params)
+            self.connection.commit()
+            return True
+        except psycopg2.Error as e:
+            logger.error(f'{error_message}: {str(e)}')
+            return None
+
+    def get_live_matches(self):
+        query = """
+            SELECT 
+                match_id, 
+                match_data 
+            FROM dota_dds.pro_matches 
+            WHERE is_live = True
+        """
+        return self._execute_query(query, 'fetch', 'Error checking live games')
+
+    def create_match(self, match_id, series_id, match_data):
+        query = """
+            INSERT INTO dota_dds.pro_matches (match_id, series_id, match_data, is_live)
+            VALUES (%s, %s, %s, True)
+        """
+        self._execute_query(query, 'commit', 'Error created game', match_id, series_id, match_data)
+        logger.info(f'Successfully created match {match_id}')
+
+    def update_match(self, match_id, data, is_live):
+        query = """
+            UPDATE dota_dds.pro_matches
+            SET is_live = %s,
+                match_data = %s
+            WHERE match_id = %s
+        """
+        self._execute_query(query, 'commit', 'Error updating game', is_live, data, match_id)
+
+    def get_match_info(self, match_id):
+        query = """
+            SELECT match_id, result
+            FROM dota_ods.predictions
+            WHERE match_id = %s
+        """
+        return self._execute_query(query, 'fetchone', 'Error fetching match info', match_id)
+
+    def add_match_status(self, match_id, match_data, ingame_dttm):
+        query = """
+            INSERT INTO dota_dds.pro_matches_statuses (match_id, match_data, ingame_dttm)
+            SELECT %s, %s, %s
+            WHERE NOT EXISTS (
+                SELECT 1 FROM dota_dds.pro_matches_statuses
+                WHERE match_id = %s AND ingame_dttm = %s
+            )
+        """
+        self._execute_query(query, 'commit', 'Error created game', match_id, match_data, ingame_dttm, match_id, ingame_dttm)
+
+    def get_match_statuses(self, match_id):
+        query = """
+            SELECT match_id, match_data, ingame_dttm 
+            FROM dota_dds.pro_matches_statuses 
+            WHERE match_id = %s
+            ORDER BY ingame_dttm ASC
+        """
+        result = self._execute_query(query, 'fetchall', 'Error fetching game statuses', match_id)
+        return {'match_id': match_id, 'statuses': result}
+
+    def create_predictions(self, predictions):
+        query = """
+            INSERT INTO dota_ods.predictions (match_id, radiant_team, dire_team, model, prediction, probability)
+            VALUES (%(match_id)s, %(radiant_team)s, %(dire_team)s, %(model)s, %(prediction)s, %(probability)s)
+        """
+        self._execute_query(query, 'commitmany', 'Error creating game', predictions)
+        logger.info(f'Successfully predicted matches {[match["match_id"] for match in predictions]}')
+
+    def update_predictions(self, match_id, result):
+        query = """
+            UPDATE dota_ods.predictions
+            SET result = %s
+            WHERE match_id = %s
+        """
+        self._execute_query(query, 'commit', 'Error updating game', result, match_id)
+        logger.info(f'Successfully updated result in predictions {match_id}')
+
+    def get_predictions(self, query, params=None, is_match=False):
+        rows = self._execute_query(query, 'fetchall', 'Error returning predictions', params)
+        
+        matches = {}
+        for row in rows:
+            match_id = row[0]
+            radiant_team = row[1]
+            dire_team = row[2]
+            league_name = row[3]
+            model = row[4]
+            prediction = row[5]
+            probability = row[6]
+            result = row[7] if is_match else None
+            match_key = (match_id, radiant_team, dire_team, league_name)
+            if match_key not in matches:
+                matches[match_key] = {'predictions': [], 'result': result}
+            matches[match_key]['predictions'].append({
+                'model': model,
+                'prediction': prediction,
+                'probability': probability
+            })
+        
+        predictions = [
+            {
+                'match_id': key[0],
+                'radiant_team': key[1],
+                'dire_team': key[2],
+                'league_name': key[3],
+                'predictions': value['predictions'],
+                'result': value['result']
+            }
+            for key, value in matches.items()
+        ]
+        
+        return predictions
 
     def get_live_predictions(self):
         live_matches_query = sql.SQL("""
@@ -225,14 +191,12 @@ class DatabaseService:
                 p.model,
                 p.prediction,
                 p.probability
-            FROM dota_ods.predictions p
-            INNER JOIN dota_dds.pro_matches pm
-                ON p.match_id = pm.match_id
-                AND pm.is_live = True
-            INNER JOIN dota_dds.leagues l
-                ON l.league_id = (pm.match_data ->> 'league_id')::int
-                AND l.allowed = True
-            WHERE p.raw_dt >= current_date - INTERVAL '1 day'
+            FROM 
+                dota_ods.predictions p
+                INNER JOIN dota_dds.pro_matches pm ON p.match_id = pm.match_id AND pm.is_live = True
+                INNER JOIN dota_dds.leagues l ON l.league_id = (pm.match_data ->> 'league_id')::int AND l.allowed = True
+            WHERE 
+                p.raw_dt >= current_date - INTERVAL '1 day'
         """)
 
         predictions = self.get_predictions(live_matches_query)
@@ -249,13 +213,12 @@ class DatabaseService:
                 p.prediction,
                 p.probability,
                 p.result
-            FROM dota_ods.predictions p
-            LEFT JOIN dota_dds.pro_matches pm
-                ON p.match_id = pm.match_id
-            INNER JOIN dota_dds.leagues l
-                ON l.league_id = COALESCE((pm.match_data ->> 'league_id')::int, (pm.match_data ->> 'leagueid')::int)
-                AND l.allowed = True
-            WHERE p.match_id = %s
+            FROM 
+                dota_ods.predictions p
+                LEFT JOIN dota_dds.pro_matches pm ON p.match_id = pm.match_id
+                INNER JOIN dota_dds.leagues l ON l.league_id = COALESCE((pm.match_data ->> 'league_id')::int, (pm.match_data ->> 'leagueid')::int) AND l.allowed = True
+            WHERE 
+                p.match_id = %s
         """)
 
         predictions = self.get_predictions(match_query, (match_id,), is_match=True)
@@ -263,182 +226,132 @@ class DatabaseService:
 
 
     def get_max_value(self, table, column):
-        try:
-            with self.connection.cursor() as cursor:
-                schema, table = table.split('.')
-                query = sql.SQL("SELECT MAX({}) FROM {}.{}").format(sql.Identifier(column), sql.Identifier(schema), sql.Identifier(table))
-                cursor.execute(query)
-                max_value = cursor.fetchone()[0]
-                logger.info(f'Successfully retrieved the maximum value from {table}.{column}')
-                return max_value   
-        except psycopg2.Error as e:
-            logger.error(f'Error retrieving maximum value: {str(e)}')
-            return None
+        schema, table = table.split('.')
+        query = sql.SQL("SELECT MAX({}) FROM {}.{}").format(sql.Identifier(column), sql.Identifier(schema), sql.Identifier(table))
+        max_value = self._execute_query(query, 'fetch', 'Error retrieving maximum value')
+        return max_value[0][0] if max_value else None
         
     def get_tournaments_stats(self):
-        try:
-            with self.connection.cursor() as cursor:
-                query = sql.SQL("""
-                    SELECT 
-                        league_name,
-                        model,
-                        COUNT(*) AS total_games,
-                        COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END) AS total_correct,
-                        COUNT(CASE WHEN prediction != result THEN p.match_id ELSE NULL END) AS total_incorrect,
-                        ROUND((COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END)::float / COUNT(*)::float)::numeric, 2) AS winrate
-                    FROM dota_ods.predictions p
-                    LEFT JOIN dota_dds.pro_matches pm 
-                        ON pm.match_id = p.match_id 
-                    LEFT JOIN dota_dds.leagues l 
-                        ON l.league_id = (pm.match_data ->> 'leagueid')::int
-                    WHERE league_name IS NOT NULL
-                    AND is_live = false 
-                    AND prediction IS NOT NULL
-                    AND probability > 0.57
-                    AND allowed = True
-                    AND league_id NOT IN (14783)
-                    GROUP BY 
-                        1, 2
-                """)
-                cursor.execute(query)
-                stats = {}
+        query = sql.SQL("""
+            SELECT 
+                league_name,
+                model,
+                COUNT(*) AS total_games,
+                COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END) AS total_correct,
+                COUNT(CASE WHEN prediction != result THEN p.match_id ELSE NULL END) AS total_incorrect,
+                ROUND((COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END)::float / COUNT(*)::float)::numeric, 2) AS winrate
+            FROM dota_ods.predictions p
+            LEFT JOIN dota_dds.pro_matches pm 
+                ON pm.match_id = p.match_id 
+            LEFT JOIN dota_dds.leagues l 
+                ON l.league_id = (pm.match_data ->> 'leagueid')::int
+            WHERE league_name IS NOT NULL
+            AND is_live = false 
+            AND prediction IS NOT NULL
+            AND probability > 0.57
+            AND allowed = True
+            AND league_id NOT IN (14783)
+            GROUP BY 
+                1, 2
+        """)
 
-                rows = cursor.fetchall()
-                for row in rows:
-                    league_name = row[0]
-                    model_name = row[1]
-                    total_games = row[2]
-                    total_correct = row[3]
-                    total_incorrect = row[4]
-                    winrate = row[5]
+        rows = self._execute_query(query, 'fetch', 'Error retrieving tournament stats')
+        stats = defaultdict(lambda: {'predictions': []})
 
-                    if league_name in stats:
-                        stats[league_name]['predictions'].append({
-                            'model_name': model_name,
-                            'total_games': total_games,
-                            'total_correct': total_correct,
-                            'total_incorrect': total_incorrect,
-                            'winrate': winrate
-                        })
-                    else:
-                        stats[league_name] = {
-                            'predictions': [{
-                                'model_name': model_name,
-                                'total_games': total_games,
-                                'total_correct': total_correct,
-                                'total_incorrect': total_incorrect,
-                                'winrate': winrate
-                            }]
-                        }
+        for row in rows:
+            league_name = row[0]
+            model_name = row[1]
+            total_games = row[2]
+            total_correct = row[3]
+            total_incorrect = row[4]
+            winrate = row[5]
 
-                logger.info(f'Successfully retrieved tournament stats.')
-        except psycopg2.Error as e:
-            logger.error(f'Error retrieving tournament stats: {str(e)}')
-        
+            stats[league_name]['predictions'].append({
+                'model_name': model_name,
+                'total_games': total_games,
+                'total_correct': total_correct,
+                'total_incorrect': total_incorrect,
+                'winrate': winrate
+            })
+
         return {'tournaments': [{'league_name': k, 'predictions': v['predictions']} for k, v in stats.items()]}
-    
-    def get_recent_stats(self):
-        try:
-            with self.connection.cursor() as cursor:
-                query = sql.SQL("""
-                    SELECT 
-                        COUNT(*) AS total_predictions,
-                        COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END) AS total_correct,
-                        COUNT(CASE WHEN prediction != result THEN p.match_id ELSE NULL END) AS total_incorrect,
-                        ROUND((COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END)::float / NULLIF(COUNT(*)::float, 0))::numeric, 2) AS winrate
-                    FROM dota_ods.predictions p
-                    LEFT JOIN dota_dds.pro_matches pm
-                        ON pm.match_id = p.match_id
-                    LEFT JOIN dota_dds.leagues l 
-                        ON l.league_id = (pm.match_data ->> 'leagueid')::int
-                    WHERE 
-                        p.raw_dt = current_date - interval '1 day'
-                        AND p.prediction IS NOT NULL
-                        AND p.probability > 0.59
-                        AND l.allowed = True
-                        AND model = 'heroes_standard'
-                """)
-                cursor.execute(query)
 
-                result = cursor.fetchone()
-                column_names = [desc[0] for desc in cursor.description]
-                stats = dict(zip(column_names, result))
-                if stats['total_predictions'] == 0:
-                    raise ValueError("No predictions were made.")
-                return stats
-        except psycopg2.Error as e:
-            logger.error(f'Error retrieving recent stats: {str(e)}')
+    def get_recent_stats(self):
+        query = sql.SQL("""
+            SELECT 
+                COUNT(*) AS total_predictions,
+                COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END) AS total_correct,
+                COUNT(CASE WHEN prediction != result THEN p.match_id ELSE NULL END) AS total_incorrect,
+                ROUND((COUNT(CASE WHEN prediction = result THEN p.match_id ELSE NULL END)::float / NULLIF(COUNT(*)::float, 0))::numeric, 2) AS winrate
+            FROM dota_ods.predictions p
+            LEFT JOIN dota_dds.pro_matches pm
+                ON pm.match_id = p.match_id
+            LEFT JOIN dota_dds.leagues l 
+                ON l.league_id = (pm.match_data ->> 'leagueid')::int
+            WHERE 
+                p.raw_dt = current_date - interval '1 day'
+                AND p.prediction IS NOT NULL
+                AND p.probability > 0.59
+                AND l.allowed = True
+                AND model = 'heroes_standard'
+        """)
+
+        result = self._execute_query(query, 'fetch', 'Error retrieving recent stats')
+        if not result:
             return None
+
+        column_names = [desc[0] for desc in self.cursor.description]
+        stats = dict(zip(column_names, result[0]))
+        if stats['total_predictions'] == 0:
+            raise ValueError("No predictions were made.")
+        return stats
         
     def insert_public_matches(self, matches):
-        try:
-            with self.connection.cursor() as cursor:
-                insert_query = sql.SQL("""
-                    INSERT INTO dota_dds.public_matches (match_id, start_time, duration, game_mode, avg_rank_tier, radiant_team, dire_team, radiant_win, raw_dt)
-                    VALUES (%(match_id)s, %(start_time)s, %(duration)s, %(game_mode)s, %(avg_rank_tier)s, %(radiant_team)s, %(dire_team)s, %(radiant_win)s, CURRENT_DATE)
-                    ON CONFLICT (match_id) DO NOTHING
-                """)
-                psycopg2.extras.execute_batch(cursor, insert_query, matches)
-                self.connection.commit()
-                logger.info(f'Successfully inserted new matches')
-        except psycopg2.Error as e:
-            logger.error(f'Error inserting new matches: {str(e)}')
-    
+        insert_query = sql.SQL("""
+            INSERT INTO dota_dds.public_matches (match_id, start_time, duration, game_mode, avg_rank_tier, radiant_team, dire_team, radiant_win, raw_dt)
+            VALUES (%(match_id)s, %(start_time)s, %(duration)s, %(game_mode)s, %(avg_rank_tier)s, %(radiant_team)s, %(dire_team)s, %(radiant_win)s, CURRENT_DATE)
+            ON CONFLICT (match_id) DO NOTHING
+        """)
+        return self._execute_batch_query(insert_query, matches, 'Error inserting new matches')
+
     def get_allowed_leagues(self):
-        try:
-            with self.connection.cursor() as cursor:
-                query = sql.SQL("""
-                    SELECT league_id
-                    FROM dota_dds.leagues
-                    WHERE allowed = True
-                """)
-                cursor.execute(query)
-                rows = cursor.fetchall()
-                league_ids = [row[0] for row in rows]
-                return league_ids
-        except psycopg2.Error as e:
-            print(f'Error retrieving allowed leagues: {str(e)}')
-            return []
-        
+        query = sql.SQL("""
+            SELECT league_id
+            FROM dota_dds.leagues
+            WHERE allowed = True
+        """)
+        rows = self._execute_query(query, 'fetch', 'Error retrieving allowed leagues')
+        return [row[0] for row in rows] if rows else []
+
     def get_league_names(self, match_ids):
-        try:
-            with self.connection.cursor() as cursor:
-                query = sql.SQL("""
-                    SELECT
-                        pm.match_id,
-                        l.league_name
-                    FROM dota_dds.pro_matches pm
-                    LEFT JOIN dota_dds.leagues l 
-                        ON l.league_id = COALESCE(pm.match_data ->> 'leagueid', pm.match_data ->> 'league_id')::int
-                    WHERE match_id IN (SELECT unnest(%s))
-                """)
-                cursor.execute(query, (match_ids,))
-                df = pd.DataFrame(cursor.fetchall(), columns=['match_id', 'league_name'])
-                return df
-        except psycopg2.Error as e:
-            logger.error(f'Error fetching league names: {str(e)}')
-            return pd.DataFrame()
-        
+        query = sql.SQL("""
+            SELECT
+                pm.match_id,
+                l.league_name
+            FROM dota_dds.pro_matches pm
+            LEFT JOIN dota_dds.leagues l 
+                ON l.league_id = COALESCE(pm.match_data ->> 'leagueid', pm.match_data ->> 'league_id')::int
+            WHERE match_id IN (SELECT unnest(%s))
+        """)
+        rows = self._execute_query(query, 'fetch', 'Error fetching league names', (match_ids,))
+        return pd.DataFrame(rows, columns=['match_id', 'league_name']) if rows else pd.DataFrame()
+
     def refresh_materialized_views(self):
         view_names = ['dota_ods.hero_stats',
                     'dota_ods.player_hero_stats',
                     'dota_ods.player_stats',
                     'dota_ods.teams_stats',
                     'dota_ods.team_vs_team']
-        try:
-            with self.connection.cursor() as cursor:
-                for view_name in view_names:
-                    query = f"REFRESH MATERIALIZED VIEW {view_name}"
-                    cursor.execute(query)
-            logger.info("Successfully refreshed all materialized views.")
-        except psycopg2.Error as e:
-            logger.error(f'Error refreshing materialized views: {str(e)}')
-
+        for view_name in view_names:
+            query = f"REFRESH MATERIALIZED VIEW {view_name}"
+            if not self._execute_query(query, 'commit', f'Error refreshing materialized view {view_name}'):
+                return
+        logger.info("Successfully refreshed all materialized views.")
+        
     def get_stats_for_prediction(self, match_ids):
         try:
-            with self.connection.cursor() as cursor:       
-                query = sql.SQL("""
-                    WITH game AS (
+            query = """
+                WITH game AS (
                         SELECT 
                             match_id,
                             match_data,
@@ -568,17 +481,15 @@ class DatabaseService:
                         AND tvt.opp_id = g.dire_id
                     LEFT JOIN player_hero_stats phs
                         ON phs.match_id = g.match_id
-                """)
-
-                cursor.execute(query, (match_ids,))  
-                column_names = [desc[0] for desc in cursor.description]
-                rows = cursor.fetchall()
-                stats = [dict(zip(column_names, row)) for row in rows]
-                return {'stats': stats}
-        except psycopg2.Error as e:
+            """
+            data = (match_ids,)
+            rows = self.execute_query(query, data)
+            stats = [dict(zip(row.keys(), row.values())) for row in rows]
+            return {'stats': stats}
+        except Exception as e:
             logger.error(f'Error retrieving stats for match {match_ids}: {str(e)}')
             return {}
 
 
-db = DatabaseService(db_name = db_name, user = user, password = password)
+db = DatabaseService()
 

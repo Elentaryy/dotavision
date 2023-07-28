@@ -25,7 +25,6 @@ def add_league_names(df):
     return df
 
 def check_live_matches():
-    current_date = date.today().strftime('%Y-%m-%d')
     data =  ds.get_live_matches() # Live dota 2 matches via API
 
     if data:

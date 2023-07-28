@@ -6,18 +6,19 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 logger = logging.getLogger('Google')
-load_dotenv()
-
-google_creds = os.getenv('GOOGLE_CREDS')
-json_creds = json.loads(google_creds)
 
 class GoogleService:
-    def __init__(self, json_creds=json_creds):
-        self.creds_json = json_creds
-        self.scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
-        self.client = self.authenticate()
+    def __init__(self):
+        load_dotenv()
+        google_creds = os.getenv('GOOGLE_CREDS')
+        if not google_creds:
+            raise ValueError("Missing GOOGLE_CREDS environment variable")
 
-    def authenticate(self):
+        self.creds_json = json.loads(google_creds)
+        self.scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+        self.client = self._authenticate()
+
+    def _authenticate(self):
         creds = ServiceAccountCredentials.from_json_keyfile_dict(self.creds_json, self.scope)
         client = gspread.authorize(creds)
         return client
@@ -47,7 +48,7 @@ class GoogleService:
             prediction_col_number = worksheet.find("Prediction").col
             pred_result_col_number = worksheet.find("Prediction result").col
         except gspread.CellNotFound:
-            logger.info(f'Match ID {match_id} or columns not found.')
+            logger.error(f'Match ID {match_id} or columns not found.')
             return
 
         for cell in match_cells:
