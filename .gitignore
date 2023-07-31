@@ -13,13 +13,10 @@ data/
 /.pnp
 .pnp.js
 
-# testing
 /coverage
 
-# production
 /build
 
-# misc
 .DS_Store
 .env.local
 .env.development.local
@@ -32,4 +29,4 @@ yarn-error.log*
 
 node_modules/
 
-notebooks/
+.csv*

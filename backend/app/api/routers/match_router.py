@@ -1,15 +1,21 @@
-from api.handlers.match_handler import get_match_info
-from api.models.live_model import Matches, LiveSeries
-from api.models.error import Error
-from fastapi import APIRouter
-from typing import List, Union
+from fastapi import APIRouter, HTTPException
+from services.db_service import db
+import logging
 
-router = APIRouter(
-    prefix="/match",
-    tags=["match"],
-)
+logger = logging.getLogger('match_router')
 
-@router.get("")
-def read_match_info(match_id: int):
-    return get_match_info(match_id)
+match_router = APIRouter(tags=["Match"])
 
+@match_router.get("/{match_id}")
+async def get_match_info(match_id: int):
+    try:
+        stats = db.get_match_info(match_id)
+        if not stats:
+            raise HTTPException(status_code=404, detail="Match not found")
+        return stats
+    except HTTPException as http_error:
+        raise http_error
+    except Exception as e:
+        logger.error(f'Something went wrong {str(e)}')
+        raise HTTPException(status_code=500, detail="Something went wrong")
+    
