@@ -13,7 +13,9 @@ async def get_match_info(match_id: int):
         if not stats:
             raise HTTPException(status_code=404, detail="Match not found")
         return stats
+    except HTTPException as http_error:
+        raise http_error
     except Exception as e:
-        logger.info(f'Something went wrong {str(e)}')
+        logger.error(f'Something went wrong {str(e)}')
         raise HTTPException(status_code=500, detail="Something went wrong")
     

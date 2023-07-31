@@ -47,7 +47,6 @@ def predict_heroes(df):
         'probability': model.predict_proba(pred).max(axis=1)
     })
 
-    logger.info('Success!')
     return predictions_df.to_dict(orient="records")
 
 def predict_teams(df):

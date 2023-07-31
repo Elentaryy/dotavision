@@ -43,8 +43,8 @@ if __name__ == '__main__':
     application.add_handler(tournament_details_handler)
 
     scheduler = AsyncIOScheduler(timezone=moscow_tz)
-    scheduler.add_job(fetch_predictions, 'interval', seconds=30, args=(application, CHANNEL_ID))
-    scheduler.add_job(fetch_stats, 'cron', hour=3, minute=5, args=(application, CHANNEL_ID))
+    #scheduler.add_job(fetch_predictions, 'interval', seconds=30, args=(application, CHANNEL_ID))
+    #scheduler.add_job(fetch_stats, 'cron', hour=3, minute=5, args=(application, CHANNEL_ID))
     scheduler.start()
     
     application.run_polling()

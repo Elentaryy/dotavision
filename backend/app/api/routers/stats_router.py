@@ -14,7 +14,7 @@ async def get_tournaments_stats():
             raise HTTPException(status_code=404, detail="No tournament stats found")
         return stats
     except Exception as e:
-        logger.info(f'Something went wrong {str(e)}')
+        logger.error(f'Something went wrong {str(e)}')
         raise HTTPException(status_code=500, detail="Something went wrong")
     
 @stats_router.get("/recent")
@@ -27,4 +27,5 @@ async def get_recent_stats():
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
+        logger.error(f'Something went wrong {str(e)}')
         raise HTTPException(status_code=500, detail='Something went wrong')
