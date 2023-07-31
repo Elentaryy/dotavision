@@ -24,8 +24,6 @@ async def get_recent_stats():
         if stats is None:
             raise HTTPException(status_code=500, detail="Server error occurred.")
         return stats
-    except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         logger.error(f'Something went wrong {str(e)}')
         raise HTTPException(status_code=500, detail='Something went wrong')
