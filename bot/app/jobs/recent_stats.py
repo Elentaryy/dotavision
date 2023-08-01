@@ -25,6 +25,6 @@ async def fetch_stats(app, channel_id):
             message = format_prediction_stats(data)
             await app.bot.send_message(chat_id=channel_id, text=message, parse_mode='HTML')
         else:
-            logger.info(f'No stats available {r.status_code}, {r.text}')
+            logger.error(f'No stats available {r.status_code}, {r.text}')
     except Exception as e:
-        logger.info(f'Something went wrong while fetching stats {str(e)}')
+        logger.error(f'Something went wrong while fetching stats {str(e)}')

@@ -1,7 +1,6 @@
 from services.db_update import check_live_matches
 
 import logging 
-from time import sleep
 
 logging.basicConfig(
     filename='app.log',

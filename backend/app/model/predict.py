@@ -42,7 +42,7 @@ def predict_heroes(df):
         'match_id': df_predict['match_id'],
         'radiant_team': df_predict['radiant_team'],
         'dire_team': df_predict['dire_team'],
-        'model': model_name,
+        'model': 'heroes_standard',
         'prediction': model.predict(pred),
         'probability': model.predict_proba(pred).max(axis=1)
     })
