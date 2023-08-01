@@ -3,7 +3,7 @@ import logging
 from api.routers.predictions_router import predictions_router
 from api.routers.stats_router import stats_router
 from api.routers.match_router import match_router
-from services.db_update import update_public_matches
+from services.db_update import update_public_matches, check_live_matches
 from services.db_service import db
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -25,6 +25,7 @@ api_router.include_router(match_router, prefix="/match")
 app = FastAPI()
 
 app.include_router(api_router, prefix="/api")
+
 scheduler = BackgroundScheduler()
 scheduler.add_job(
         update_public_matches,
@@ -36,6 +37,13 @@ scheduler.add_job(
         name='Refresh materialized views every 3 hours', 
         replace_existing=True
     )
+scheduler.add_job(
+        check_live_matches,
+        IntervalTrigger(seconds=20),
+        name='Check live matches', 
+        replace_existing=True
+    )
+
 scheduler.start()
 
 @app.get("/")

@@ -46,10 +46,13 @@ def filter_games_to_predict(games: List[dict], predicted_ids: List[int], allowed
 
 def update_db_with_live_matches(games: List[dict], db_data: List[int]):
     for game in games:
-        if game['match_id'] not in db_data and game['match_id'] != 0:
-            db.create_match(match_id=game['match_id'], series_id=None, match_data=game)
-        if game['match_id'] in db_data:
-            db.update_match(match_id=game['match_id'], data=game, is_live=True)
+        try:
+            if game['match_id'] not in db_data and game['match_id'] != 0:
+                db.create_match(match_id=game['match_id'], series_id=None, match_data=game)
+            if game['match_id'] in db_data:
+                db.update_match(match_id=game['match_id'], data=game, is_live=True)
+        except Exception as e:
+            logger.error(f'DB Error - {str(e)}')
 
 def make_and_save_predictions(games_ids_to_predict: List[int], games_to_predict: List[dict]):
     df_heroes = pd.DataFrame({'match_id': games_ids_to_predict, 'match_data': games_to_predict})
@@ -58,12 +61,16 @@ def make_and_save_predictions(games_ids_to_predict: List[int], games_to_predict:
     df_teams = pd.DataFrame(db.get_stats_for_prediction(games_ids_to_predict).get('stats'))        
     df_teams['probability'] = heroes_predictions['probability'].where(heroes_predictions['prediction']==1, 1-heroes_predictions['probability'])
     teams_predictions = pd.DataFrame(predict_teams(df_teams))
-
+ 
     db.create_predictions(pd.concat((heroes_predictions, teams_predictions)).to_dict(orient='records'))
 
     google_predictions = add_league_names(heroes_predictions)
     google_predictions['date'] = date.today().strftime('%Y-%m-%d')
-    gs.write_prediction(google_predictions, 'DotaVision')
+
+    try:
+        gs.write_prediction(google_predictions, 'DotaVision')
+    except Exception as e:
+        logger.error(f'Error writing prediction to google sheet {str(e)}')
 
 def update_ended_games(db_data: List[int], game_ids: List[int], allowed_leagues: List[int]):
     for game_id in db_data:
@@ -80,7 +87,7 @@ def fetch_match_info(game_id: int) -> Optional[dict]:
     try:
         return ds.get_match_info(str(game_id))
     except Exception as e:
-        logger.info(f'GGs Error - {str(e)}')
+        logger.error(f'GGs Error - {str(e)}')
         return None
     
 def check_live_matches():
@@ -106,29 +113,34 @@ def transform_teams(team):
     return [int(hero) for hero in team.split(',')]
 
 def update_public_matches():
-    last_pro_match = db.get_max_value('dota_dds.pro_matches', 'match_id')
-    last_public_match = db.get_max_value('dota_dds.public_matches', 'match_id')
+    try:
+        last_pro_match = db.get_max_value('dota_dds.pro_matches', 'match_id')
+        last_public_match = db.get_max_value('dota_dds.public_matches', 'match_id')
 
-    data = []
-    for _ in range(MAX_ITERATIONS):
-        try:
-            sleep(SLEEP_TIME)
-            match_data = ds.get_public_matches(last_pro_match)
-            if any(match['match_id'] <= last_public_match for match in match_data):
+        data = []
+        for _ in range(MAX_ITERATIONS):
+            try:
+                sleep(SLEEP_TIME)
+                match_data = ds.get_public_matches(last_pro_match)
+                if any(match['match_id'] <= last_public_match for match in match_data):
+                    break
+                
+                data.extend(match_data)
+                last_pro_match = data[-1]['match_id']
+            except Exception as e:
+                logger.error(f'Exception while fetching data for match_id {last_pro_match}. Error: {str(e)}')
                 break
-            
-            data.extend(match_data)
-            last_pro_match = data[-1]['match_id']
-        except Exception as e:
-            logger.info(f'Exception while fetching data for match_id {last_pro_match}. Error: {str(e)}')
-            break
-    data = [{k: v for k, v in match.items() if k in ['match_id', 'start_time', 'duration', 'game_mode', 'avg_rank_tier', 'radiant_team', 'dire_team', 'radiant_win']} for match in data]
 
-    df = pd.DataFrame(data)
-    df['radiant_team'] = df['radiant_team'].apply(transform_teams)
-    df['dire_team'] = df['dire_team'].apply(transform_teams)
+        data = [{k: v for k, v in match.items() if k in ['match_id', 'start_time', 'duration', 'game_mode', 'avg_rank_tier', 'radiant_team', 'dire_team', 'radiant_win']} for match in data]
 
-    db.insert_public_matches(df.to_dict(orient='records'))
+        df = pd.DataFrame(data)
+        df['radiant_team'] = df['radiant_team'].apply(transform_teams)
+        df['dire_team'] = df['dire_team'].apply(transform_teams)
+
+        db.insert_public_matches(df.to_dict(orient='records'))
+
+    except Exception as e:
+        logger.error(f'Update public matches error: {str(e)}')
 
 
 
